@@ -1,0 +1,10 @@
+[project]
+name = "pluspy"
+version = "0.1.0"
+description = "Refactored PlusPy: A Python implementation TLA+ model checker."
+authors = [
+    {"name"= "Markus Alexander Kuppe", "email"= "github.com@lemmster.de"},
+    {"name"= "Erik Aker", "email"= "eraker@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
