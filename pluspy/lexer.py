@@ -1,5 +1,7 @@
 from .utils import (
-    isalnum, isnamechar, isletter,
+    isalnum,
+    isletter,
+    isnamechar,
 )
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
@@ -180,10 +182,10 @@ class Token:
     __slots__ = ("lexeme", "where", "column", "first")
 
     def __init__(self, lexeme: str, where: tuple[str, int], column: int, first):
-        self.lexeme = lexeme
+        self.lexeme = lexeme  # string representation of the token
         self.where = where  # filename, line number
-        self.column = column
-        self.first = first
+        self.column = column  # Column number offset
+        self.first = first  # True if it's the first token on the line
 
     def __getitem__(self, i):
         """Pretend to be a tuple"""
@@ -199,7 +201,7 @@ class Token:
 
     def __str__(self):
         (file, line) = self.where
-        return f"Token('{self.lexeme}', {file}: {line=}, col={self.column}, {self.first})"
+        return f"Token('{self.lexeme}', {file}: ({line=}, col={self.column}), {self.first})"
 
 
 # Turn input into a sequence of tokens.  Each token is a tuple

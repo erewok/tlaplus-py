@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 TestChannel > test4.out 2>test4.out2
+$PLUSPY_EXEC -S0 -c100 TestChannel > test4.out 2>test4.out2
 if cmp -s test4.out regression/test4.exp
 then
     if cmp -s test4.out2 regression/test4.exp2

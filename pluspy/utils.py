@@ -93,7 +93,7 @@ def key(v):
     assert False
 
 # Convert a value to a string in TLA+ format
-def format(v):
+def val_to_string(v):
     if v == "":
         return "<<>>"
     if v == frozenset():
@@ -107,7 +107,7 @@ def format(v):
         for x in v:
             if result != "":
                 result += ", "
-            result += format(x)
+            result += val_to_string(x)
         return "<< " + result + " >>"
     if isinstance(v, frozenset):
         lst = sorted(v, key=lambda x: key(x))
@@ -115,10 +115,10 @@ def format(v):
         for x in lst:
             if result != "":
                 result += ", "
-            result += format(x)
+            result += val_to_string(x)
         return "{ " + result + " }"
     if isinstance(v, FrozenDict):
-        return v.format()
+        return v.val_to_string()
     return str(v)
 
 
@@ -153,16 +153,16 @@ class FrozenDict:
     def __len__(self):
         return len(self.d.keys())
 
-    def format(self):
+    def val_to_string(self):
         result = ""
         keys = sorted(self.d.keys(), key=lambda x: key(x))
         for k in keys:
             if result != "":
                 result += ", "
             if is_tla_id(k):
-                result += k + " |-> " + format(self.d[k])
+                result += k + " |-> " + val_to_string(self.d[k])
             else:
-                result += format(k) + " |-> " + format(self.d[k])
+                result += val_to_string(k) + " |-> " + val_to_string(self.d[k])
         return "[ " + result + " ]"
 
 

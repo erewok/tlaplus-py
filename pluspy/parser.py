@@ -6,16 +6,9 @@ import threading
 import traceback
 from typing import NewType
 
-from .lexer import (
-    lexer, PostfixOps, PrefixOps, InfixOps, Token
-)
 from . import wrappers
-from .utils import (
-    convert, key,
-    isnamechar, isnumeral, isletter,
-    FrozenDict, Nonce
-)
-
+from .lexer import InfixOps, lexer, PostfixOps, PrefixOps, Token
+from .utils import convert, FrozenDict, isletter, isnamechar, isnumeral, key, Nonce, val_to_string
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +18,6 @@ def exit(status):
     os._exit(status)
 
 # Hidden vars for running
-waitset = set()
-signalset = set()
 maxcount = None
 step = 0
 lock = threading.Lock()
@@ -1306,7 +1297,7 @@ class GExpression(Rule):
         # See if this is an expression starting with /\ or \/
         lex = s[0].lexeme
         if lex in {"/\\", "\\/"}:
-            lex, = s[0].lexeme
+            lex = s[0].lexeme
             column = s[0].column
             token = (lex, column, True)
             stack.append(token)
@@ -2548,8 +2539,6 @@ class ExistsExpression(Expression):
         )
 
     def enumerate(self, containers, domains, boundedvars):
-        global IO_outputs, waitset, signalset
-
         if domains == []:
             return self.expr.eval(containers, boundedvars)
         (var, domain) = domains[0]
@@ -2559,9 +2548,9 @@ class ExistsExpression(Expression):
         domain = random.sample(list(domain), len(domain))
 
         # Copy next state in case need to restore
-        output_copy = IO_outputs.copy()
-        waitset_copy = waitset.copy()
-        signalset_copy = signalset.copy()
+        output_copy = wrappers.IO_outputs.copy()
+        waitset_copy = wrappers.waitset.copy()
+        signalset_copy = wrappers.signalset.copy()
         copy = {}
         for k, v in containers.items():
             copy[k] = v.next
@@ -2572,9 +2561,9 @@ class ExistsExpression(Expression):
             # restore state before trying next
             for k, v in copy.items():
                 containers[k].next = v
-            IO_outputs = output_copy
-            waitset = waitset_copy
-            signalset = signalset_copy
+            wrappers.IO_outputs = output_copy
+            wrappers.waitset = waitset_copy
+            wrappers.signalset = signalset_copy
         return False
 
     def eval(self, containers, boundedvars):
@@ -3008,11 +2997,11 @@ class OutfixExpression(Expression):
         tries = 0
         i = 0
         while True:
-            global maxcount, waitset, cond
+            global maxcount, cond
 
             if not silent:
                 s = {k.id: c.next for (k, c) in containers.items()}
-                print("Next state:", i, format(FrozenDict(s)))
+                print("Next state:", i, val_to_string(FrozenDict(s)))
             if maxcount is not None and i >= maxcount:
                 exit(0)
             for c in containers.values():
@@ -3126,7 +3115,7 @@ class ChooseExpression(Expression):
                     return s[0]
                 if self.expr.op.lexeme == "\\notin":
                     # CHOOSE of same expression should return same value...
-                    x = format(self.expr.rhs)
+                    x = val_to_string(self.expr.rhs)
                     return Nonce(x.__hash__())
                 assert False
             elif isinstance(self.expr, ValueExpression) and isinstance(
@@ -3402,8 +3391,6 @@ class InfixExpression(Expression):
         )
 
     def eval(self, containers, boundedvars):
-        global IO_outputs, waitset, signalset  # these behave as hidden variables
-
         lex = self.op.lexeme
 
         # One special case is if the expression is of the form x' = ...
@@ -3431,9 +3418,9 @@ class InfixExpression(Expression):
         # with FALSE left hand side.  Also, randomize lhs/rhs
         # evaluation
         if lex == "\\/":
-            output_copy = IO_outputs.copy()
-            waitset_copy = waitset.copy()
-            signalset_copy = signalset.copy()
+            output_copy = wrappers.IO_outputs.copy()
+            waitset_copy = wrappers.waitset.copy()
+            signalset_copy = wrappers.signalset.copy()
             copy = {}
             for k, v in containers.items():
                 copy[k] = v.next
@@ -3455,9 +3442,9 @@ class InfixExpression(Expression):
             # restore and evaluate right hand side
             for k, v in copy.items():
                 containers[k].next = v
-            IO_outputs = output_copy
-            waitset = waitset_copy
-            signalset = signalset_copy
+            wrappers.IO_outputs = output_copy
+            wrappers.waitset = waitset_copy
+            wrappers.signalset = signalset_copy
         elif lex == "/\\":
             assert r == 0
             if not lhs:

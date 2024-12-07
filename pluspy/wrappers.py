@@ -4,7 +4,7 @@ import socket
 import threading
 import time
 
-from .utils import convert, simplify, FrozenDict
+from .utils import convert, FrozenDict, simplify, val_to_string
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Python Wrappers (to replace TLA+ operator definitions)
@@ -13,6 +13,8 @@ from .utils import convert, simplify, FrozenDict
 # This is a dictionary of wrappers around Python functions
 # Maps module names to dictionaries of (operator name, Wrapper) pairs
 wrappers = {}
+signalset = set()
+waitset = set()
 
 
 class Wrapper:
@@ -271,7 +273,7 @@ class ToStringWrapper(Wrapper):
 
     def eval(self, id, args):
         assert len(args) == 1
-        return str(format(args[0]))
+        return val_to_string(args[0])
 
 
 TLCvars = {}

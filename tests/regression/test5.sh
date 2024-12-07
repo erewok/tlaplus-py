@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 TestInnerFIFO > test5.out 2>test5.out2
+$PLUSPY_EXEC -S0 -c100 TestInnerFIFO > test5.out 2>test5.out2
 if cmp -s test5.out regression/test5.exp
 then
     if cmp -s test5.out2 regression/test5.exp2

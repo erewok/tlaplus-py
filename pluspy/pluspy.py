@@ -3,16 +3,15 @@ import os
 import random
 import sys
 
+from . import parser
 from .parser import (
+    ContainerExpression,
     Module,
     ModuleLoader,
-    ValueExpression,
     OperatorExpression,
-    ContainerExpression,
+    ValueExpression,
 )
-from . import parser
-from .utils import simplify, FrozenDict
-
+from .utils import FrozenDict, simplify
 
 logger = logging.getLogger(__name__)
 

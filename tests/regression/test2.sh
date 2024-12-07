@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 Peterson > test2.out 2>test2.out2
+$PLUSPY_EXEC -S0 -c100 Peterson > test2.out 2>test2.out2
 if cmp -s test2.out regression/test2.exp
 then
     if cmp -s test2.out2 regression/test2.exp2

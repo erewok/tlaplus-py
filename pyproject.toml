@@ -8,3 +8,52 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.11"
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.2",
+]
+
+[build-system]
+requires = ["setuptools", "versioningit"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+pythonpath = "."
+xfail_strict = "True"
+addopts = "--cov-report=term-missing:skip-covered --cov=pluspy --strict-config --strict-markers --cov-report html"
+testpaths = ["tests"]
+filterwarnings = [
+    "error"
+]
+
+[tool.ruff]
+src = ["pluspy", "tests"]
+fix = true
+show-fixes = true
+output-format = "full"
+line-length = 110
+
+[tool.ruff.lint]
+select = [
+    "B",  # flake8-bugbear
+    "E",  # pycodestyle error
+    "F",  # pyflakes
+    "FA",  # flake8-future-annotations
+    "I",  # isort
+    "N",  # pep8-naming
+    "UP",  # pyupgrade
+    "W",  # pycodestyle warning
+]
+ignore = ["N818", "N805"]  # exception naming
+
+[tool.ruff.lint.isort]
+force-single-line = false
+order-by-type = false

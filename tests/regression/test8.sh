@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 TestBinBosco > test8.out 2>test8.out2
+$PLUSPY_EXEC -S0 -c100 TestBinBosco > test8.out 2>test8.out2
 if cmp -s test8.out regression/test8.exp
 then
     if cmp -s test8.out2 regression/test8.exp2

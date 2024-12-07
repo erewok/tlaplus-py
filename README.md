@@ -2,13 +2,15 @@
 
 This is a rewritten version of [`pluspy`](https://github.com/tlaplus/PlusPy), a Python interpreter for TLA+ specifications.
 
-**This is not a fork**. I refactored the `pluspy` codebase instead for the following reasons:
+I refactored the `pluspy` codebase instead for the following reasons:
 
 - For self-teaching: I wanted to understand how states are generated.
 - I wanted to understand the parsing/interpretation of TLA+ specs.
 - I wanted to modify the original Python code to be closer to the contemporary Python I was used to reading (for learning).
 
-The existence of this codebase is not meant _in any way_ to be a judgment or reflection of opinion about the original codebase. Instead, I rewrote the original Python codebase to make it easier for me to understand while simultaneously trying to reverse engineer was doing. Lastly, the code in here is also not intended to be integrated back into the original repository and this is why it's not intended as a fork.
+The existence of this codebase is not meant _in any way_ to be a judgment or reflection of opinion about the original codebase. Instead, I rewrote the original Python codebase to make it easier for me to understand while simultaneously trying to reverse engineer was doing.
+
+Lastly, **the code in here is also not intended to be integrated back into the original repository**.
 
 ## Original README From `pluspy` Below
 

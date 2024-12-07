@@ -20,3 +20,4 @@ htmlcov/
 coverage.xml
 coverage/
 pluspy/old_pluspy.py
+tests/test*.out*

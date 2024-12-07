@@ -1,12 +1,12 @@
 import sys
 
-from . import parser
-from .utils import isnumeral, convert
-from .wrappers import netSender, IO_inputs, IO_outputs
+from . import parser, wrappers
+from .utils import convert, isnumeral, val_to_string
+from .wrappers import netSender
 
 
 def flush():
-    for x in IO_outputs:
+    for x in wrappers.IO_outputs:
         d = x.d
         if d["intf"] == "fd":
             if d["mux"] == "stdout":
@@ -20,19 +20,19 @@ def flush():
             netSender(d["mux"], d["data"]).start()
         else:
             assert d["intf"] == "local"
-            IO_inputs.append(x)
+            wrappers.IO_inputs.append(x)
 
     wakeup = False
-    for x in parser.signalset:
-        if x in parser.waitset:
-            parser.waitset.remove(x)
+    for x in wrappers.signalset:
+        if x in wrappers.waitset:
+            wrappers.waitset.remove(x)
             wakeup = True
     if wakeup:
         parser.cond.notifyAll()
 
 def drain():
-    parser.IO_outputs = []
-    parser.signalset = set()
+    wrappers.IO_outputs = []
+    wrappers.signalset = set()
 
 
 def handleOutput(output):
@@ -80,9 +80,9 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
                 break
             tries = 0
             if not silent:
-                print("Next state:", parser.step, format(pp.getall()), flush=True)
+                print("Next state:", parser.step, val_to_string(pp.getall()), flush=True)
             parser.step += 1
 
             # To implement JWait/JSignalReturn
-            while arg in parser.waitset:
+            while arg in wrappers.waitset:
                 parser.cond.wait(0.2)

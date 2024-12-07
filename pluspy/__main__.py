@@ -4,10 +4,10 @@ import os
 import sys
 import threading
 
-from .pluspy import exit, PlusPy
 from . import parser
+from .pluspy import exit, PlusPy
 from .runners import run
-
+from .utils import val_to_string
 
 logger = logging.getLogger("pluspy")
 logger.setLevel(logging.INFO)
@@ -81,7 +81,7 @@ def main():
         logger.info("---------------")
     pp.init(initOp)
     if not silent:
-        logger.info(f"Initial context: {format(pp.getall())}")
+        logger.info(f"Initial context: {val_to_string(pp.getall())}")
 
     if verbose:
         logger.info("\n")
