@@ -28,14 +28,10 @@ def usage():
     exit(1)
 
 
-pluspypath = ".:./modules/lib:./modules/book:./modules/other"
+DEFAULT_MODULE_PATH = ".:./modules/lib:./modules/book:./modules/other"
 
 def main():
-    global pluspypath
-
-    if os.environ.get("PLUSPYPATH") is not None:
-        pluspypath = os.environ["PLUSPYPATH"]
-
+    pluspypath = os.environ.get("PLUSPYPATH", DEFAULT_MODULE_PATH)
     # Get options.  First set default values
     initOp = "Init"
     nextOps = set()
@@ -73,7 +69,7 @@ def main():
 
     parser.verbose = verbose
     parser.silent = silent
-    pp = PlusPy(args[0], seed=seed)
+    pp = PlusPy(args[0], seed=seed, module_path=pluspypath  )
     mod = pp.mod
     if verbose:
         logger.info(f"Loaded module: {mod.name}")

@@ -1,5 +1,4 @@
-# Author: Robbert van Renesse, 2020
-
+import logging
 import os
 import random
 import sys
@@ -7,14 +6,19 @@ import threading
 import traceback
 from typing import NewType
 
+from .lexer import (
+    lexer, PostfixOps, PrefixOps, InfixOps, Token
+)
 from . import wrappers
 from .utils import (
     convert, key,
-    isalnum, isnamechar, isnumeral, isletter,
+    isnamechar, isnumeral, isletter,
     FrozenDict, Nonce
 )
 
-pluspypath = ".:./modules/lib:./modules/book:./modules/other"
+
+logger = logging.getLogger(__name__)
+
 
 def exit(status):
     sys.stdout.flush()
@@ -68,7 +72,7 @@ def name_lookup(name):
 def name_find(name):
     e = name_lookup(name)
     if not e:
-        print("Identifier", name, "not found")
+        logger.error(f"Identifier {name} not found")
     return e
 
 
@@ -118,14 +122,14 @@ class Module:
             assert t1 == "GOpDecl"
             (t2, a2) = a1
             if t2 == "Identifier":
-                id = lexeme(a2)
+                id = a2.lexeme
                 nargs = 0
             elif t2 == "paramOp":
                 (t3, a3) = a2[0]
                 assert t3 == "Identifier"
                 (t4, a4) = a2[1]
                 assert t4 == "CommaList"
-                id = lexeme(a3)
+                id = a3.lexeme
                 nargs = len(a4)
             elif t2 == "prefixOp" or t2 == "postfixOp":
                 id = a2
@@ -145,13 +149,13 @@ class Module:
         assert t == "CommaList"
         for t2, a2 in a:
             assert t2 == "Identifier"
-            id = lexeme(a2)
+            id = a2.lexeme
             ve = VariableExpression(id)
             self.variables[id] = ve
             name_stack[-1][id] = ve
 
     # handle an "Operator == INSTANCE name" definition
-    def compileModuleDefinition(self, md, isGlobal, loaded_modules: ModuleLoader):
+    def compileModuleDefinition(self, md, isGlobal, loaded_modules: ModuleLoader, module_path: str):
         (t0, a0) = md[0]
         assert t0 == "GNonFixLHS"
         assert len(a0) == 2
@@ -159,7 +163,7 @@ class Module:
 
         (t2, a2) = a0[0]
         assert t2 == "Identifier"
-        id = lexeme(a2)
+        id = a2.lexeme
         (t3, a3) = a0[1]
         assert t3 == "Optional"
         if a3 is None:
@@ -174,13 +178,13 @@ class Module:
             assert t == "GOpDecl"
             (t2, a2) = a
             if t2 == "Identifier":
-                cargs = cargs + [(lexeme(a2), 0)]
+                cargs = cargs + [(a2.lexeme, 0)]
             elif t2 == "paramOp":
                 (t3, a3) = a2[0]
                 assert t3 == "Identifier"
                 (t4, a4) = a2[1]
                 assert t4 == "CommaList"
-                cargs = cargs + [(lexeme(a3), len(a4))]
+                cargs = cargs + [(a3.lexeme, len(a4))]
             elif t2 == "prefixOp" or t2 == "postfixOp":
                 cargs = cargs + [(a2, 1)]
             elif t2 == "infixOp":
@@ -188,14 +192,10 @@ class Module:
             else:
                 assert False
 
-        # print("MD 1", id)
-
         mi = ModInst()
         args = [ArgumentExpression(a, c) for (a, c) in cargs]
         name_stack.append({a.id: a for a in args})
-        # print("MD 2", id, inst)
-        mi.compile(inst, loaded_modules)
-        # print("MD 3", id, args, mi)
+        mi.compile(inst, loaded_modules, module_path)
         name_stack.pop()
 
         # We put the ModInst inside the expr field of an OperatorExpression
@@ -205,10 +205,10 @@ class Module:
             self.globals.add(id)
         name_stack[-1][id] = od
         if verbose:
-            print("++> ", od, mi)
+            logger.info(f"++> {od}, {mi}")
 
     # handle the next TLA "Unit" in the source
-    def compileUnit(self, ast, loaded_modules: ModuleLoader):
+    def compileUnit(self, ast, loaded_modules: ModuleLoader, module_path: str):
         (t, a) = ast
         if t == "GVariableDeclaration":
             self.compileVariableDeclaration(a)
@@ -231,12 +231,12 @@ class Module:
                 self.globals.add(id)
             name_stack[-1][id] = od.expr if args == [] else od
             if verbose:
-                print("+-> ", id, args, expr.primed, expr)
+                logger.info(f"+-> {id=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-inst":
             (tloc, aloc) = a[0]
             assert tloc == "Optional"
             mi = ModInst()
-            mi.compile(a[1], loaded_modules)
+            mi.compile(a[1], loaded_modules, module_path)
             for k in mi.globals:
                 self.operators[k] = mi.operators[k]
                 if aloc is None:
@@ -255,28 +255,28 @@ class Module:
             # name_stack[-1][id] = od
             name_stack[-1][id] = expr
             if verbose:
-                print("++> ", id, args, expr.primed, expr)
+                logger.info(f"++> {id=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-mod":
             (tloc, aloc) = a[0]
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
-            self.compileModuleDefinition(a1, tloc is not None, loaded_modules)
+            self.compileModuleDefinition(a1, tloc is not None, loaded_modules, module_path)
         elif t in {"GTheorem", "GAssumption", "GDivider"}:
             pass
         elif t == "GModule":
             mod = Module()
-            mod.compile(ast, loaded_modules)
+            mod.compile(ast, loaded_modules, module_path)
             name_stack[-1][mod.name] = mod
         else:
-            print("compileUnit", ast)
+            logger.info(f"compileUnit {ast=}", )
             assert False
 
     # Get operators from EXTENDS clause
-    def extends(self, ast, loaded_modules: ModuleLoader):
+    def extends(self, ast, loaded_modules: ModuleLoader, module_path: str):
         for n, m in ast:
             assert n == "Name"
-            mod = load_module(lexeme(m), loaded_modules)
+            mod = load_module(m.lexeme, loaded_modules, module_path)
             assert mod.constants == dict()
             assert mod.variables == dict()
             for k in mod.globals:
@@ -287,7 +287,7 @@ class Module:
                 name_stack[-1][k] = mod.operators[k]
 
     # Given AST, handle all the TLA+ units in the AST
-    def compile(self, ast, loaded_modules: ModuleLoader):
+    def compile(self, ast, loaded_modules: ModuleLoader, module_path: str):
         (t, a) = ast
         if t is False:
             return False
@@ -295,7 +295,7 @@ class Module:
         assert len(a) == 3
         (t0, a0) = a[0]
         assert t0 == "Name"
-        self.name = lexeme(a0)
+        self.name = a0.lexeme
 
         # Set wrappers
         self.wrappers = wrappers.wrappers.get(self.name)
@@ -310,86 +310,85 @@ class Module:
         if a1 is not None:
             (tx, ax) = a1
             assert tx == "CommaList"
-            self.extends(ax, loaded_modules)
+            self.extends(ax, loaded_modules, module_path)
 
         (t2, a2) = a[2]
         assert t2 == "AtLeast0"
         for ast2 in a2:
-            self.compileUnit(ast2, loaded_modules)
+            self.compileUnit(ast2, loaded_modules, module_path)
 
         if verbose:
-            print("Variables", self.name, self.variables)
+            logger.info(f"{self.name} Variables: {self.variables}")
 
         name_stack.pop()
         return True
 
     # Load and compile the given TLA+ source, which is a string
-    def load_from_string(self, source, srcid, loaded_modules: ModuleLoader):
+    def load_from_string(self, source, srcid, loaded_modules: ModuleLoader, module_path: str):
         # First run source through lexical analysis
-        r = lexer(source, srcid)
+        tokens: list[Token] = lexer(source, srcid)
         if verbose:
-            print()
-            print("---------------")
-            print("Output from Lexer")
-            print("---------------")
-            print(r)
+            logger.info("---------------")
+            logger.info("Output from Lexer")
+            logger.info("---------------")
+            logger.info(", ".join(map(lambda t: f"\n{str(t)}" if t.first else str(t), tokens)))
 
         # Parse the output from the lexer into an AST
         gmod = GModule()
 
         # Error handling
         global shortest, error
-        shortest = r
+        shortest = tokens
 
-        (t, a, r) = gmod.parse(r)
+        (t, a, r) = gmod.parse(tokens)
         # t is the type of the AST root node (False if error)
         # a is the content (or error message list if error)
         # r is the suffix of the lexer output that could not be parsed
 
         if t is False:
-            print("Parsing failed", a)
-            print(error)
-            print("At position", shortest[0])
+            logger.error(f"Parsing failed {a}")
+            logger.error(error)
+            logger.error(f"At position {shortest[0]}")
             return False
 
         if r != []:
-            print("Remainder", r[0])
+            logger.info(f"Remainder {r[0]}")
 
         # Handle all TLA+ units in the AST
         if verbose:
-            print()
-            print("---------------")
-            print("Compile", source.split("\n")[0].replace("-", ""))
-            print("---------------")
+            logger.info("---------------")
+            splitted = source.split("\n")[0].replace("-", "")
+            logger.info(f"Compile {splitted}")
+            logger.info("---------------")
 
         modstk.append(self)
-        result = self.compile((t, a), loaded_modules=loaded_modules)
+        result = self.compile((t, a), loaded_modules, module_path)
         modstk.pop()
 
         return result
 
-    def load(self, f, srcid, loaded_modules: ModuleLoader):
+    def load(self, f, srcid, loaded_modules: ModuleLoader, module_path: str):
         all = ""
         for line in f:
             all += line
-        return self.load_from_string(all, srcid, loaded_modules)
+        return self.load_from_string(all, srcid, loaded_modules, module_path)
 
-    def load_from_file(self, file, loaded_modules: ModuleLoader):
-        full = file_find(file, pluspypath)
+    def load_from_file(self, file, loaded_modules: ModuleLoader, module_path: str):
+        full = file_find(file, module_path)
         if not full:
             return False
         with open(full) as f:
-            return self.load(f, file, loaded_modules)
+            return self.load(f, file, loaded_modules, module_path)
 
 
-def load_module(name: str, loaded_modules: ModuleLoader):
+def load_module(name: str, loaded_modules: ModuleLoader, module_path: str):
     mod = name_lookup(name)
     if mod is False:
         if loaded_modules.get(name) is None:
             mod = Module()
             name_stack.append({})
-            if not mod.load_from_file(name + ".tla", loaded_modules):
-                print("can't load", name, ": fatal error", file=sys.stderr)
+            if not mod.load_from_file(name + ".tla", loaded_modules, module_path):
+                logger.error(f"can't load {name}: fatal error file={sys.stderr}")
                 exit(1)
             name_stack.pop()
             loaded_modules[name] = mod
@@ -446,12 +445,12 @@ class ModInst:
         self.module = module
         self.substitutions = substitutions
 
-    def compile(self, ast, loaded_modules: ModuleLoader):
+    def compile(self, ast, loaded_modules: ModuleLoader, module_path: str):
         (t, a) = ast
         assert t == "GInstance"
         (t1, a1) = a[0]
         assert t1 == "Name"
-        self.module = load_module(lexeme(a1), loaded_modules)
+        self.module = load_module(a1.lexeme, loaded_modules, module_path)
 
         (t2, a2) = a[1]
         assert t2 == "Optional"
@@ -465,7 +464,7 @@ class ModInst:
                 assert t5 == "Identifier"
                 (t6, a6) = a4[1]
                 assert t6 == "GArgument"
-                d[lexeme(a5)] = compileExpression(a6)
+                d[a5.lexeme] = compileExpression(a6)
 
         # We now need to replace all the constants and variables in the
         # operators of the module.  Some may have been specified using
@@ -490,7 +489,6 @@ class ModInst:
             assert self.operators.get(k) is None
             d = self.module.operators[k]
             self.operators[k] = d.substitute(self.substitutions)
-            # print("AAA", k, d, self.operators[k])
             self.globals.add(k)
             if self.module.wrappers.get(k) is not None:
                 self.wrappers[k] = self.module.wrappers[k]
@@ -532,135 +530,6 @@ ReservedWords = [
     "WF_",
 ]
 
-PrefixOps = {
-    "-": (12, 12),
-    "-.": (12, 12),
-    "~": (4, 4),
-    "\\lnot": (4, 4),
-    "\\neg": (4, 4),
-    "[]": (4, 15),
-    "<>": (4, 15),
-    "DOMAIN": (9, 9),
-    "ENABLED": (4, 15),
-    "SUBSET": (8, 8),
-    "UNCHANGED": (4, 15),
-    "UNION": (8, 8),
-}
-
-InfixOps = {
-    "!!": (9, 13),
-    "#": (5, 5),
-    "##": (9, 13),
-    "$": (9, 13),
-    "$$": (9, 13),
-    "%": (10, 11),
-    "%%": (10, 11),
-    "&": (13, 13),
-    "&&": (13, 13),
-    "(+)": (10, 10),
-    "(-)": (11, 11),
-    "(.)": (13, 13),
-    "(/)": (13, 13),
-    "(\\X)": (13, 13),
-    "*": (13, 13),
-    "**": (13, 13),
-    "+": (10, 10),
-    "++": (10, 10),
-    "-": (11, 11),
-    "-+->": (2, 2),
-    "--": (11, 11),
-    "-|": (5, 5),
-    "..": (9, 9),
-    "...": (9, 9),
-    "/": (13, 13),
-    "//": (13, 13),
-    "/=": (5, 5),
-    "/\\": (3, 3),
-    "::=": (5, 5),
-    ":=": (5, 5),
-    ":>": (7, 7),
-    "<": (5, 5),
-    "<:": (7, 7),
-    "<=>": (2, 2),
-    "=": (5, 5),
-    "<=": (5, 5),
-    "=<": (5, 5),
-    "=>": (1, 1),
-    "=|": (5, 5),
-    ">": (5, 5),
-    ">=": (5, 5),
-    "??": (9, 13),
-    "@@": (6, 6),
-    "\\": (8, 8),
-    "\\/": (3, 3),
-    "^": (14, 14),
-    "^^": (14, 14),
-    "|": (10, 11),
-    "|-": (5, 5),
-    "|=": (5, 5),
-    "||": (10, 11),
-    "~>": (2, 2),
-    ".": (17, 17),
-    "\\approx": (5, 5),
-    "\\geq": (5, 5),
-    "\\oslash": (13, 13),
-    "\\sqsupseteq": (5, 5),
-    "\\asymp": (5, 5),
-    "\\gg": (5, 5),
-    "\\otimes": (13, 13),
-    "\\star": (13, 13),
-    "\\bigcirc": (13, 13),
-    "\\in": (5, 5),
-    "\\notin": (5, 5),
-    "\\prec": (5, 5),
-    "\\subset": (5, 5),
-    "\\bullet": (13, 13),
-    "\\intersect": (8, 8),
-    "\\preceq": (5, 5),
-    "\\subseteq": (5, 5),
-    "\\cap": (8, 8),
-    "\\land": (3, 3),
-    "\\propto": (5, 5),
-    "\\succ": (5, 5),
-    "\\cdot": (5, 14),
-    "\\leq": (5, 5),
-    "\\sim": (5, 5),
-    "\\succeq": (5, 5),
-    "\\circ": (13, 13),
-    "\\ll": (5, 5),
-    "\\simeq": (5, 5),
-    "\\supset": (5, 5),
-    "\\cong": (5, 5),
-    "\\lor": (3, 3),
-    "\\sqcap": (9, 13),
-    "\\supseteq": (5, 5),
-    "\\cup": (8, 8),
-    "\\o": (13, 13),
-    "\\sqcup": (9, 13),
-    "\\union": (8, 8),
-    "\\div": (13, 13),
-    "\\odot": (13, 13),
-    "\\sqsubset": (5, 5),
-    "\\uplus": (9, 13),
-    "\\doteq": (5, 5),
-    "\\ominus": (11, 11),
-    "\\sqsubseteq": (5, 5),
-    "\\wr": (9, 14),
-    "\\equiv": (2, 2),
-    "\\oplus": (10, 10),
-    "\\sqsupset": (5, 5),
-    # The following are Cartesian product ops, not infix operators
-    "\\X": (10, 13),
-    "\\times": (10, 13),
-}
-
-PostfixOps = {
-    "[": (16, 16),
-    "^+": (15, 15),
-    "^*": (15, 15),
-    "^#": (15, 15),
-    "'": (15, 15),
-}
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Compiler: AST pretty printer
@@ -754,12 +623,6 @@ def printAST(x, indent):
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 
 
-# Extract the lexeme out of a token
-def lexeme(token):
-    (lex, line, column, first) = token
-    return lex
-
-
 stack = []  # Global parser state used for parsing disjuncts and conjuncts
 
 # For error messages
@@ -767,7 +630,7 @@ shortest = []
 error = []
 
 
-def parseError(a, r):
+def parseError(a, r: Token):
     global shortest, error
     if len(r) < len(shortest):
         error = a
@@ -902,10 +765,10 @@ class tok(Rule):
     def parse(self, s):
         if s == []:
             return parseError(["tok: no more tokens"], s)
-        if lexeme(s[0]) == self.what:
+        if s[0].lexeme == self.what:
             return ("tok", s[0], s[1:])
         return parseError(
-            [("tok: no match with '" + self.what + "'", stringToken(s[0]))], s
+            [(f"tok: no match with '{self.what}' {s[0]}", str(s[0]))], s
         )
 
 
@@ -917,7 +780,7 @@ class Tok(Rule):
     def parse(self, s):
         if s == []:
             return parseError(["Tok: no more tokens"], s)
-        if lexeme(s[0]) in self.what:
+        if s[0].lexeme in self.what:
             return ("Tok", s[0], s[1:])
         return parseError(["Tok: no match with " + self.name], s)
 
@@ -926,10 +789,10 @@ class Name(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s):
+    def parse(self, s: list[Token]):
         if s == []:
             return parseError(["Name"], s)
-        lex = lexeme(s[0])
+        lex = s[0].lexeme
         if lex.startswith("WF_"):
             return parseError([("Name WF_", s[0])], s)
         if lex.startswith("SF_"):
@@ -953,7 +816,7 @@ class Identifier(Rule):
         (t, a, r) = Name().parse(s)
         if t != "Name":
             return parseError(["Identifier: not a Name"] + a, s)
-        lex = lexeme(a)
+        lex = a.lexeme
         if lex in ReservedWords:
             return parseError([("Identifier: Name Reserved", a)], s)
         return ("Identifier", a, r)
@@ -975,10 +838,10 @@ class Number(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s):
+    def parse(self, s: Token):
         if s == []:
             return parseError(["Number"], s)
-        lex = lexeme(s[0])
+        lex = s[0].lexeme
         for c in lex:
             if not isnumeral(c):
                 return parseError([("Number", s[0])], s)
@@ -989,10 +852,10 @@ class String(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s):
+    def parse(self, s: Token):
         if s == []:
             return parseError(["String"], s)
-        lex = lexeme(s[0])
+        lex = s[0].lexeme
         if lex[0] == '"' and lex[-1] == '"':
             return ("String", lex, s[1:])
         return parseError([("String", s[0])], s)
@@ -1004,7 +867,7 @@ class SeparatorList(Rule):
         self.sep = sep  # separator token
         self.optional = optional  # empty list allowed
 
-    def parse(self, s):
+    def parse(self, s: Token):
         (t, a, r) = self.what.parse(s)
         if not t:
             return (
@@ -1015,7 +878,7 @@ class SeparatorList(Rule):
         rem = r
         result = [(t, a)]
         while True:
-            if lexeme(rem[0]) != self.sep:
+            if rem[0].lexeme != self.sep:
                 return ("SeparatorList", result, rem)
             (t, a, r) = self.what.parse(rem[1:])
             if not t:
@@ -1035,7 +898,7 @@ class CommaList(Rule):
         rem = r
         result = [(t, a)]
         while True:
-            if lexeme(rem[0]) != ",":
+            if rem[0].lexeme != ",":
                 return ("CommaList", result, rem)
             (t, a, r) = self.what.parse(rem[1:])
             if not t:
@@ -1441,9 +1304,10 @@ class GExpression(Rule):
             return match("GExpression18", s, GBasicExpression(), True)
 
         # See if this is an expression starting with /\ or \/
-        lex = lexeme(s[0])
+        lex = s[0].lexeme
         if lex in {"/\\", "\\/"}:
-            (lex, line, column, first) = s[0]
+            lex, = s[0].lexeme
+            column = s[0].column
             token = (lex, column, True)
             stack.append(token)
             (t, a, r) = GExpression(0).parse(s[1:])
@@ -1462,7 +1326,7 @@ class GExpression(Rule):
 
         # See if the expression starts with a prefix operator.
         # TODO.  Should match again GGeneralPrefixOp
-        x = PrefixOps.get(lexeme(s[0]))
+        x = PrefixOps.get(s[0].lexeme)
         if x is not None:
             # Compute the precedence level of the operator.
             prec = precedence(x)
@@ -1490,7 +1354,7 @@ class GExpression(Rule):
                 return (t, a, r)
 
             # See if it's a postfix expression with sufficient precedence
-            x = PostfixOps.get(lexeme(r[0]))
+            x = PostfixOps.get(r[0].lexeme)
             if x is not None:
                 # Compute the precedence level.  If of a lower level, we're done.
                 prec = precedence(x)
@@ -1498,7 +1362,7 @@ class GExpression(Rule):
                     return (t, a, r)
 
                 # Check for an index expression
-                if lexeme(r[0]) == "[":
+                if r[0].lexeme == "[":
                     (t2, a2, r2) = Concat(
                         [tok("["), CommaList(GExpression(0)), tok("]")]
                     ).parse(r)
@@ -1514,7 +1378,7 @@ class GExpression(Rule):
 
             else:
                 # See if the next token is an infix operator.  If not, we're done.
-                lex = lexeme(r[0])
+                lex = r[0].lexeme
                 x = InfixOps.get(lex)
                 if x is None:
                     return (t, a, r)
@@ -1534,7 +1398,7 @@ class GExpression(Rule):
                         (
                             r[0],
                             (t, a),
-                            ("CommaList", [("String", '"' + lexeme(a2) + '"')]),
+                            ("CommaList", [("String", f'"{a2.lexeme}"')]),
                         ),
                         r2,
                     )
@@ -1898,241 +1762,6 @@ class GBasicExpression(Rule):
         )
 
 
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-####    Compiler: Lexer
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-
-# Initial list of tokens for the lexer.  More added later from op tables.
-tokens = [
-    "<<",
-    ">>",
-    "]_",
-    "<-",
-    "->",
-    "|->",
-    "==",
-    "\\A",
-    "\\E",
-    "\\AA",
-    "\\EE",
-    "WF_",
-    "SF_",
-]
-
-
-# Add tokens from the given operator table
-def addTokens(boundedvars):
-    global tokens
-    for op, (low, hi) in boundedvars.items():
-        if not isalnum(op[0]) and not (
-            len(op) > 1 and op[0] == "\\" and isletter(op[1])
-        ):
-            tokens = tokens + [op]
-
-
-# add tokens from the operators
-addTokens(PrefixOps)
-addTokens(InfixOps)
-addTokens(PostfixOps)
-
-
-def stringToken(x):
-    (lexeme, where, column, first) = x
-    (file, line) = where
-    return lexeme + " (" + file + ":" + str(line) + ":" + str(column) + ")"
-
-
-# Turn input into a sequence of tokens.  Each token is a tuple
-#   (lexeme, (file, line), column, first), where first is true if
-#   it's the first token on the line
-def lexer(s, file):
-    result = []
-    line = 1
-    column = 1
-    first = True
-    while s != "":
-        # see if it's a blank
-        if s[0] in {" ", "\t"}:
-            s = s[1:]
-            column += 1
-            continue
-
-        if s[0] == "\n":
-            s = s[1:]
-            line += 1
-            column = 1
-            first = True
-            continue
-
-        # Skip over "pure" TLA+
-        if s.startswith("\\*++:SPEC"):
-            s = s[8:]
-            while len(s) > 0 and not s.startswith("\\*++:PlusPy"):
-                s = s[1:]
-            continue
-
-        # skip over line comments
-        if s.startswith("\\*"):
-            s = s[2:]
-            while len(s) > 0 and s[0] != "\n":
-                s = s[1:]
-            continue
-
-        # skip over nested comments
-        if s.startswith("(*"):
-            count = 1
-            s = s[2:]
-            column += 2
-            while count != 0 and s != "":
-                if s.startswith("(*"):
-                    count += 1
-                    s = s[2:]
-                    column += 2
-                elif s.startswith("*)"):
-                    count -= 1
-                    s = s[2:]
-                    column += 2
-                elif s[0] == "\n":
-                    s = s[1:]
-                    line += 1
-                    column = 1
-                    first = True
-                else:
-                    s = s[1:]
-                    column += 1
-            continue
-
-        # a series of four or more '-' characters is a lexeme
-        if s.startswith("----"):
-            s = s[4:]
-            c = column
-            column += 4
-            while len(s) > 0 and s[0] == "-":
-                s = s[1:]
-                column += 1
-            result += [("----", (file, line), c, first)]
-            first = False
-            continue
-
-        # a series of four or more '=' characters is a lexeme
-        if s.startswith("===="):
-            s = s[4:]
-            c = column
-            column += 4
-            while len(s) > 0 and s[0] == "=":
-                s = s[1:]
-                column += 1
-            result += [("====", (file, line), c, first)]
-            first = False
-            continue
-
-        # if a backslash, it may be an special operator.  Otherwise just \
-        if s[0] == "\\" and len(s) > 1 and isalnum(s[1]):
-            i = 2
-            while i < len(s) and isalnum(s[i]):
-                i += 1
-            result += [(s[:i], (file, line), column, False)]
-            first = False
-            s = s[i:]
-            column += i
-            continue
-
-        # see if it's a multi-character token.  Match with the longest one
-        found = ""
-        for t in tokens:
-            if s.startswith(t) and len(t) > len(found):
-                found = t
-        if found != "":
-            result += [(found, (file, line), column, first)]
-            first = False
-            s = s[len(found) :]
-            column += len(found)
-            continue
-
-        # see if a sequence of letters and numbers
-        if isnamechar(s[0]):
-            i = 0
-            while i < len(s) and isnamechar(s[i]):
-                i += 1
-            result += [(s[:i], (file, line), column, first)]
-            first = False
-            s = s[i:]
-            column += i
-            continue
-
-        # string
-        if s[0] == '"':
-            i = 1
-            str = '"'
-            while i < len(s) and s[i] != '"':
-                if s[i] == "\\":
-                    i += 1
-                    if i == len(s):
-                        break
-                    if s[i] == '"':
-                        str += '"'
-                    elif s[i] == "\\":
-                        str += "\\"
-                    elif s[i] == "t":
-                        str += "\t"
-                    elif s[i] == "n":
-                        str += "\n"
-                    elif s[i] == "f":
-                        str += "\f"
-                    elif s[i] == "r":
-                        str += "\r"
-                    else:
-                        str += s[i]
-                else:
-                    str += s[i]
-                i += 1
-            if i < len(s):
-                i += 1
-            str += '"'
-            result += [(str, (file, line), column, first)]
-            first = False
-            s = s[i:]
-            column += i
-            continue
-
-        # everything else is a single character token
-        result += [(s[0], (file, line), column, first)]
-        first = False
-        s = s[1:]
-        column += 1
-
-    # We discard the preamble tokens below.
-    #
-    # Preamble is defined as anything that comes before the module start
-    # tokens which are `AtLeast4("-"), tok("MODULE"), Name, AtLeast4("-")` as
-    # defined in [1].
-    #
-    # We could have forwarded them to the parser and handled them there.
-    #
-    # - We discard comments right here. No tokens are created for them
-    # and the parser doesn't have to worry about them.
-    # - Preamble is also like a comment. It is not useful in later stages.
-    #
-    # Discarding preamble tokens here keeps its handling consistent with
-    # that of the comments and avoids complicating the parser code.
-    #
-    # For details see [2].
-    #
-    # References:
-    # [1] https://lamport.azurewebsites.net/tla/TLAPlus2Grammar.tla
-    # [2] https://github.com/tlaplus/PlusPy/issues/7
-    while True:
-        if len(result) < 4:
-            break
-        atLeast4Before = lexeme(result[0]) == "----"
-        tokMODULE = lexeme(result[1]) == "MODULE"
-        atLeast4After = lexeme(result[3]) == "----"
-        if atLeast4Before and tokMODULE and atLeast4After:
-            break
-        else:
-            result = result[1:]
-
-    return result
 
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
@@ -2153,7 +1782,7 @@ def getprefix(ast, operators):
         assert len(a2) == 3
         (t3, a3) = a2[0]
         assert t3 == "Identifier"
-        od = operators[lexeme(a3)]
+        od = operators[a3.lexeme]
         assert isinstance(od, OperatorExpression)
         if not isinstance(od.expr, ModInst):
             print("trying to instantiate", od.expr)
@@ -2239,7 +1868,7 @@ def compileOpExpression(od):
     # print("COE1", a1[1])
     (t2, a2) = a1[1]
     assert t2 in {"Identifier", "Tok"}
-    name = lexeme(a2)
+    name = a2.lexeme
     (t3, a3) = od[1]
     assert t3 == "Optional"
     if a3 is None:
@@ -2275,7 +1904,7 @@ def compileOpExpression(od):
             assert id.nargs == len(cargs)
             return ParameterExpression(id, cargs)
     elif operators.get(name) is None:
-        print("unknown identifier", stringToken(a2))
+        print("unknown identifier", str(a2))
         exit(1)
     else:
         id = operators[name]
@@ -2299,7 +1928,7 @@ def compileQuantBoundExpression(which, qs, ex):
         assert t3 == "CommaList"  # ignore tuples for now
         for t4, a4 in a3:
             assert t4 == "Identifier"
-            quantifiers += [BoundvarExpression(lexeme(a4))]
+            quantifiers += [BoundvarExpression(a4.lexeme)]
             domains += [domain]
 
     name_stack.append({bv.id: bv for bv in quantifiers})
@@ -2333,7 +1962,7 @@ def compileQuantUnboundExpression(which, func):
     for q in a:  # loop through these
         (t2, a2) = q
         assert t2 == "Identifier"
-        quantifiers += [VariableExpression(lexeme(a2))]
+        quantifiers += [VariableExpression(a2.lexeme)]
 
     name_stack.append({bv.id: bv for bv in quantifiers})
     expr = compileExpression(func[1])
@@ -2383,7 +2012,7 @@ def compileExpression(ast):
         return OutfixExpression().fromAST(a)
     elif t.startswith("Postfix"):
         (expr, op) = a
-        if lexeme(op) == "'":
+        if op.lexeme == "'":
             return PrimeExpression().fromAST(expr)
         else:
             return OutfixExpression().fromAST(a)
@@ -2425,7 +2054,7 @@ def compileOperatorDefinition(od):
         assert len(a0) == 2
         (t2, a2) = a0[0]
         assert t2 == "Identifier"
-        id = lexeme(a2)
+        id = a2.lexeme
         (t3, a3) = a0[1]
         assert t3 == "Optional"
         if a3 is None:
@@ -2440,13 +2069,13 @@ def compileOperatorDefinition(od):
             assert t == "GOpDecl"
             (t2, a2) = a
             if t2 == "Identifier":
-                cargs = cargs + [(lexeme(a2), 0)]
+                cargs = cargs + [(a2.lexeme, 0)]
             elif t2 == "paramOp":
                 (t3, a3) = a2[0]
                 assert t3 == "Identifier"
                 (t4, a4) = a2[1]
                 assert t4 == "CommaList"
-                cargs = cargs + [(lexeme(a3), len(a4))]
+                cargs = cargs + [(a3.lexeme, len(a4))]
             elif t2 == "prefixOp" or t2 == "postfixOp":
                 cargs = cargs + [(a2, 1)]
             elif t2 == "infixOp":
@@ -2460,8 +2089,8 @@ def compileOperatorDefinition(od):
         assert t3 == "Tok"
         (t4, a4) = a1[1]
         assert t4 == "Identifier"
-        id = lexeme(a3)
-        cargs = [(lexeme(a4), 0)]
+        id = a3.lexeme
+        cargs = [(a4.lexeme, 0)]
     elif t0 == "infix":
         (t1, a1) = a0
         assert t1 == "Concat"
@@ -2471,8 +2100,8 @@ def compileOperatorDefinition(od):
         assert t3 == "Tok"
         (t4, a4) = a1[2]
         assert t4 == "Identifier"
-        id = lexeme(a3)
-        cargs = [(lexeme(a2), 0), (lexeme(a4), 0)]
+        id = a3.lexeme
+        cargs = [(a2.lexeme, 0), (a4.lexeme, 0)]
     elif t0 == "postfix":
         (t1, a1) = a0
         assert t1 == "Concat"
@@ -2480,8 +2109,8 @@ def compileOperatorDefinition(od):
         assert t2 == "Identifier"
         (t3, a3) = a1[1]
         assert t3 == "Tok"
-        id = lexeme(a3)
-        cargs = [(lexeme(a2), 0)]
+        id = a3.lexeme
+        cargs = [(a2.lexeme, 0)]
     else:
         print("compileOperatorDefinition", t0, a0)
         assert False
@@ -2500,7 +2129,7 @@ def compileOperatorDefinition(od):
 def compileFunctionDefinition(od):
     (t0, a0) = od[0]
     assert t0 == "Identifier"
-    id = lexeme(a0)
+    id = a0.lexeme
     bve = BoundvarExpression(id)
     name_stack.append({id: bve})
     f = compileQuantBoundExpression("lambda", od[1], od[2])
@@ -2572,7 +2201,7 @@ class BuiltinExpression(Expression):
         try:
             return self.wrapper.eval(self.id, args)
         except Exception as e:
-            print("Evaluating", stringToken(self.lex), "failed")
+            print("Evaluating", str(self.lex), "failed")
             print(e)
             print(traceback.format_exc())
             exit(1)
@@ -2825,7 +2454,7 @@ class FairnessExpression(Expression):
         self.type = t
         (t0, a0) = a[0]
         if t0 == "Identifier":
-            self.lhs = VariableExpression(id=lexeme(a0))
+            self.lhs = VariableExpression(id=a0.lexeme)
         else:
             self.lhs = compileExpression(a[0])
         self.rhs = compileExpression(a[1])
@@ -3083,7 +2712,7 @@ class RecorddefExpression(Expression):
             (t3, a3) = a2[0]
             assert t3 == "Name"
             expr = compileExpression(a2[2])
-            self.kvs[lexeme(a3)] = expr
+            self.kvs[a3.lexeme] = expr
             self.primed = self.primed or expr.primed
         return self
 
@@ -3135,7 +2764,7 @@ class RecordvalueExpression(Expression):
             (t3, a3) = a2[0]
             assert t3 == "Name"
             expr = compileExpression(a2[2])
-            self.kvs[lexeme(a3)] = expr
+            self.kvs[a3.lexeme] = expr
             self.primed = self.primed or expr.primed
         return self
 
@@ -3232,7 +2861,7 @@ class ExceptExpression(Expression):
                     args += [indices]
                 else:
                     assert t3 == "Name"
-                    args += [[StringExpression(lexeme(a3))]]
+                    args += [[StringExpression(a3.lexeme)]]
             name_stack.append({"@": self.at})
             cexpr = compileExpression(expr)
             name_stack.pop()
@@ -3328,7 +2957,7 @@ class OutfixExpression(Expression):
 
     def fromAST(self, prefix):
         (op, expr) = prefix
-        lex = lexeme(op)
+        lex = op.lexeme
         self.op = "-." if lex == "-" else lex
 
         mod = modstk[-1]
@@ -3447,7 +3076,7 @@ class ChooseExpression(Expression):
         assert len(expr) == 3
         (t, a) = expr[0]
         assert t == "Identifier"
-        self.id = BoundvarExpression(lexeme(a))
+        self.id = BoundvarExpression(a.lexeme)
         (t1, a1) = expr[1]
         assert t1 == "Optional"
         self.domain = None if a1 is None else compileExpression(a1)
@@ -3482,20 +3111,20 @@ class ChooseExpression(Expression):
         if self.domain is None:
             if (
                 isinstance(self.expr, InfixExpression)
-                and lexeme(self.expr.op) in {"=", "\\in", "\\notin"}
+                and self.expr.op.lexeme in {"=", "\\in", "\\notin"}
                 and isinstance(self.expr.lhs, BoundvarExpression)
                 and self.expr.lhs == self.id
             ):
-                if lexeme(self.expr.op) == "=":
+                if self.expr.op.lexeme == "=":
                     func = self.expr.rhs
                     newBV[self.id] = func
                     return func.eval(containers, newBV)
-                if lexeme(self.expr.op) == "\\in":
+                if self.expr.op.lexeme == "\\in":
                     func = self.expr.rhs
                     newBV[self.id] = func
                     s = sorted(func.eval(containers, newBV), key=lambda x: key(x))
                     return s[0]
-                if lexeme(self.expr.op) == "\\notin":
+                if self.expr.op.lexeme == "\\notin":
                     # CHOOSE of same expression should return same value...
                     x = format(self.expr.rhs)
                     return Nonce(x.__hash__())
@@ -3521,7 +3150,7 @@ class ChooseExpression(Expression):
         if (
             self.domain is None
             and isinstance(self.expr, InfixExpression)
-            and lexeme(self.expr.op) == "="
+            and self.expr.op.lexeme == "="
             and isinstance(self.expr.lhs, BoundvarExpression)
             and self.expr.lhs == self.id
         ):
@@ -3736,7 +3365,7 @@ class InfixExpression(Expression):
     def fromAST(self, infix):
         (op, lhs, rhs) = infix
 
-        lex = lexeme(op)
+        lex = op.lexeme
         lt = compileExpression(lhs)
         rt = compileExpression(rhs)
         mod = modstk[-1]
@@ -3775,7 +3404,7 @@ class InfixExpression(Expression):
     def eval(self, containers, boundedvars):
         global IO_outputs, waitset, signalset  # these behave as hidden variables
 
-        lex = lexeme(self.op)
+        lex = self.op.lexeme
 
         # One special case is if the expression is of the form x' = ...
         # when x' is not assigned a value in next.  In that case we set
@@ -3854,7 +3483,7 @@ class InfixExpression(Expression):
             if lex == "\\notin":
                 return lhs not in rhs
         except Exception as e:
-            print("Evaluating infix", stringToken(self.op), "failed")
+            print("Evaluating infix", str(self.op), "failed")
             print(e)
             print(traceback.format_exc())
             exit(1)
@@ -4069,7 +3698,7 @@ class FilterExpression(Expression):
     def fromAST(self, filter):
         (t0, a0) = filter[0]
         if t0 == "Identifier":
-            self.vars = [BoundvarExpression(lexeme(a0))]
+            self.vars = [BoundvarExpression(a0.lexeme)]
         else:
             assert t0 == "Tuple"
             (t1, a1) = a0

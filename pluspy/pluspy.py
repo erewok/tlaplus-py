@@ -1,5 +1,4 @@
-# Author: Robbert van Renesse, 2020
-
+import logging
 import os
 import random
 import sys
@@ -13,6 +12,9 @@ from .parser import (
 )
 from . import parser
 from .utils import simplify, FrozenDict
+
+
+logger = logging.getLogger(__name__)
 
 
 def exit(status):
@@ -38,18 +40,19 @@ class PlusPy:
         constants: dict | None = None,
         modules: ModuleLoader | None = None,
         seed=None,
+        module_path: str = ".:./modules/lib:./modules/book:./modules/other",
     ):
         if seed is not None:
             random.seed(seed)
 
         constants = constants or {}
         self.modules: ModuleLoader = modules or {}
-
+        self.module_path = module_path
         # Load the module
         self.mod = Module()
         if not file.endswith(".tla"):
             file += ".tla"
-        if not self.mod.load_from_file(file, self.modules):
+        if not self.mod.load_from_file(file, self.modules, self.module_path):
             raise PlusPyError("can't load " + file)
 
         # Now that it has a name, we add it to the ModuleLoader
@@ -78,13 +81,13 @@ class PlusPy:
         parser.initializing = False
         r = expr3.eval(self.containers, {})
         if not r:
-            print("Initialization failed -- fatal error", file=sys.stderr)
+            logger.error(f"Initialization failed -- fatal error file={sys.stderr}")
             exit(1)
 
         ok = True
         for k, v in self.containers.items():
             if v.next is None:
-                print("UNASSIGNED", k)
+                logger.warning(f"UNASSIGNED: {k}")
                 ok = False
         assert ok
 
@@ -111,11 +114,11 @@ class PlusPy:
             error = False
             for v, c in self.containers.items():
                 if c.next is None:
-                    print(
-                        "Variable",
-                        v.id,
-                        "did not receive a value (fatal error)",
-                        file=sys.stderr,
+                    logger.error(
+                        (
+                            f"Variable {v.id} did not receive a value -- "
+                            f"fatal error file={sys.stderr}"
+                        ),
                     )
                     error = True
             if error:
