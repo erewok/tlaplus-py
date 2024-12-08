@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 Exprs > test11.out 2>test11.out2
+$PLUSPY_EXEC -S0 -c100 Exprs > test11.out 2>test11.out2
 if cmp -s test11.out tests/regression/test11.exp
 then
     if cmp -s test11.out2 tests/regression/test11.exp2

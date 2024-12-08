@@ -3111,26 +3111,29 @@ class ChooseExpression(Expression):
     def eval(self, containers, boundedvars):
         new_bv = boundedvars.copy()
         if self.domain is None:
+            lexeme = self.expr.op[0]
             if (
                 isinstance(self.expr, InfixExpression)
-                and self.expr.op.lexeme in {"=", "\\in", "\\notin"}
+                and lexeme in {"=", "\\in", "\\notin"}
                 and isinstance(self.expr.lhs, BoundvarExpression)
                 and self.expr.lhs == self.id
             ):
-                if self.expr.op.lexeme == "=":
-                    func = self.expr.rhs
-                    new_bv[self.id] = func
-                    return func.eval(containers, new_bv)
-                if self.expr.op.lexeme == "\\in":
-                    func = self.expr.rhs
-                    new_bv[self.id] = func
-                    s = sorted(func.eval(containers, new_bv), key=lambda x: key(x))
-                    return s[0]
-                if self.expr.op.lexeme == "\\notin":
-                    # CHOOSE of same expression should return same value...
-                    x = val_to_string(self.expr.rhs)
-                    return Nonce(x.__hash__())
-                raise ValueError("ChooseExpression: unknown operator")
+                match lexeme:
+                    case "=":
+                        func = self.expr.rhs
+                        new_bv[self.id] = func
+                        return func.eval(containers, new_bv)
+                    case "\\in":
+                        func = self.expr.rhs
+                        new_bv[self.id] = func
+                        s = sorted(func.eval(containers, new_bv), key=lambda x: key(x))
+                        return s[0]
+                    case "\\notin":
+                        # CHOOSE of same expression should return same value...
+                        x = val_to_string(self.expr.rhs)
+                        return Nonce(x.__hash__())
+                    case _:
+                        raise ValueError("ChooseExpression: unknown operator")
             elif isinstance(self.expr, ValueExpression) and isinstance(
                 self.expr.value, bool
             ):

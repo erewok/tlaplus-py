@@ -1,4 +1,4 @@
-./pluspy -S0 -c100 -i Spec TestBoundedFIFO > test10.out 2>test10.out2
+$PLUSPY_EXEC -S0 -c100 -i Spec TestBoundedFIFO > test10.out 2>test10.out2
 if cmp -s test10.out tests/regression/test10.exp
 then
     if cmp -s test10.out2 tests/regression/test10.exp2
