@@ -386,10 +386,10 @@ def lexer(s, file):
     while True:
         if len(all_tokens) < 4:
             break
-        atLeast4Before = all_tokens[0].lexeme == "----"
-        tokMODULE = all_tokens[1].lexeme == "MODULE"
-        atLeast4After = all_tokens[3].lexeme == "----"
-        if atLeast4Before and tokMODULE and atLeast4After:
+        at_least_4_before = all_tokens[0].lexeme == "----"
+        tok_module = all_tokens[1].lexeme == "MODULE"
+        at_least_4_after = all_tokens[3].lexeme == "----"
+        if at_least_4_before and tok_module and at_least_4_after:
             break
         else:
             # Advance the line number and discard the token

@@ -19,7 +19,7 @@ waitset = set()
 
 class Wrapper:
     def eval(self, id, args):
-        assert False
+        raise NotImplementedError("eval not implemeted for base class")
 
 
 class InfixWrapper(Wrapper):
@@ -92,7 +92,7 @@ class InfixWrapper(Wrapper):
                 return lhs % rhs
             if id == "^":
                 return lhs**rhs
-        assert False
+        raise ValueError(f"Unknown operator {id}")
 
 
 class OutfixWrapper(Wrapper):
@@ -132,7 +132,7 @@ class OutfixWrapper(Wrapper):
         if id in {"~", "\\lnot", "\\neg"}:
             return not expr
 
-        assert False
+        raise ValueError(f"Unknown operator {id}")
 
 
 wrappers["Core"] = {
@@ -336,7 +336,7 @@ class JSignalReturnWrapper(Wrapper):
 wrappers["TLCExt"] = {"JWait": JWaitWrapper(), "JSignalReturn": JSignalReturnWrapper()}
 
 
-class netReceiver(threading.Thread):
+class NetReceiver(threading.Thread):
     def __init__(self, src, mux, verbose: bool=False):
         threading.Thread.__init__(self)
         self.src = src
@@ -357,12 +357,12 @@ class netReceiver(threading.Thread):
         with lock:
             msg = pickle.loads(b"".join(all))
             if verbose:
-                print("netReceiver", addr, msg)
+                print("NetReceiver", addr, msg)
             IO_inputs.append(FrozenDict({"intf": "tcp", "mux": self.mux, "data": msg}))
             cond.notify()
 
 
-class netSender(threading.Thread):
+class NetSender(threading.Thread):
     def __init__(self, mux, msg):
         threading.Thread.__init__(self)
         self.mux = mux
@@ -372,7 +372,7 @@ class netSender(threading.Thread):
         parts = self.mux.split(":")
         dst = (parts[0], int(parts[1]))
         if verbose:
-            print("netSender", dst, self.msg)
+            print("NetSender", dst, self.msg)
         while True:
             try:
                 skt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -384,7 +384,7 @@ class netSender(threading.Thread):
                 time.sleep(0.5)
 
 
-class netServer(threading.Thread):
+class NetServer(threading.Thread):
     def __init__(self, mux):
         threading.Thread.__init__(self)
         self.mux = mux
@@ -397,7 +397,7 @@ class netServer(threading.Thread):
         skt.listen()
         while True:
             client = skt.accept()
-            netReceiver(client, self.mux).start()
+            NetReceiver(client, self.mux).start()
 
 
 IO_inputs = []
@@ -451,7 +451,7 @@ class IOWaitWrapper(Wrapper):
             if args[0] == "fd" and args[1] == "stdin":
                 Reader().start()
             elif args[0] == "tcp":
-                netServer(args[1]).start()
+                NetServer(args[1]).start()
             else:
                 assert args[0] == "local"
             IO_running.add((args[0], args[1]))
@@ -471,7 +471,7 @@ class IOGetWrapper(Wrapper):
             if d["intf"] == args[0] and d["mux"] == args[1]:
                 IO_inputs.remove(x)
                 return d["data"]
-        assert False
+        raise ValueError(f"IOGet.eval({args[0]}, {args[1]}) failed")
 
 
 wrappers["IOUtils"] = {

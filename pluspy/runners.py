@@ -1,9 +1,11 @@
+import logging
 import sys
 
 from . import parser, wrappers
 from .utils import convert, isnumeral, val_to_string
-from .wrappers import netSender
+from .wrappers import NetSender
 
+logger = logging.getLogger(__name__)
 
 def flush():
     for x in wrappers.IO_outputs:
@@ -17,7 +19,7 @@ def flush():
                 print(d["data"], end="", file=sys.stderr)
                 sys.stderr.flush()
         elif d["intf"] == "tcp":
-            netSender(d["mux"], d["data"]).start()
+            NetSender(d["mux"], d["data"]).start()
         else:
             assert d["intf"] == "local"
             wrappers.IO_inputs.append(x)
@@ -35,17 +37,18 @@ def drain():
     wrappers.signalset = set()
 
 
-def handleOutput(output):
+def handle_output(output):
     d = convert(output)
     if d["intf"] == "fd":
         if d["mux"] == "stdout":
-            print(d["data"], end="")
+            logger.info(d["data"], end="")
         else:
             assert d["mux"] == "stderr"
-            print(d["data"], end="", file=sys.stderr)
+            logger.info(d["data"], end="", file=sys.stderr)
     else:
-        print("GOT OUTPUT", d)
-        assert False
+        logger.info("GOT OUTPUT", d)
+        raise ValueError("Unknown output interface")
+
 
 # The Next operator, possibly with arguments separated by "%"
 def run(pp, next, silent: bool = False, verbose: bool = False):
@@ -65,7 +68,7 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
             while not pp.next(args[0], arg):
                 tries += 1
                 if verbose:
-                    print("TRY AGAIN", tries, flush=True)
+                    logger.info(f"TRY AGAIN {tries}")
                 if tries > 100:
                     parser.cond.wait(0.2)
                 drain()

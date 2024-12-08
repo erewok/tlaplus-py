@@ -106,7 +106,7 @@ class Module:
         )
 
     # handle a CONSTANT declaration
-    def compileConstantDeclaration(self, ast):
+    def compile_constant_declaration(self, ast):
         (t0, a0) = ast
         assert t0 == "CommaList"
         for t1, a1 in a0:
@@ -129,13 +129,13 @@ class Module:
                 id = a2
                 nargs = 2
             else:
-                assert False
+                raise AssertionError("Invalid constant")
             ce = ConstantExpression(id, nargs)
             self.constants[id] = ce
             name_stack[-1][id] = ce
 
     # handle a VARIABLE declaration
-    def compileVariableDeclaration(self, ast):
+    def compile_variable_declaration(self, ast):
         (t, a) = ast
         assert t == "CommaList"
         for t2, a2 in a:
@@ -146,7 +146,7 @@ class Module:
             name_stack[-1][id] = ve
 
     # handle an "Operator == INSTANCE name" definition
-    def compileModuleDefinition(self, md, isGlobal, loaded_modules: ModuleLoader, module_path: str):
+    def compile_module_definition(self, md, is_global, loaded_modules: ModuleLoader, module_path: str):
         (t0, a0) = md[0]
         assert t0 == "GNonFixLHS"
         assert len(a0) == 2
@@ -181,7 +181,7 @@ class Module:
             elif t2 == "infixOp":
                 cargs = cargs + [(a2, 2)]
             else:
-                assert False
+                raise AssertionError("Invalid argument")
 
         mi = ModInst()
         args = [ArgumentExpression(a, c) for (a, c) in cargs]
@@ -192,25 +192,25 @@ class Module:
         # We put the ModInst inside the expr field of an OperatorExpression
         od = OperatorExpression(id=id, args=args, expr=mi)
         self.operators[id] = od
-        if isGlobal:
+        if is_global:
             self.globals.add(id)
         name_stack[-1][id] = od
         if verbose:
             logger.info(f"++> {od}, {mi}")
 
     # handle the next TLA "Unit" in the source
-    def compileUnit(self, ast, loaded_modules: ModuleLoader, module_path: str):
+    def compile_unit(self, ast, loaded_modules: ModuleLoader, module_path: str):
         (t, a) = ast
         if t == "GVariableDeclaration":
-            self.compileVariableDeclaration(a)
+            self.compile_variable_declaration(a)
         elif t == "GConstantDeclaration":
-            self.compileConstantDeclaration(a)
+            self.compile_constant_declaration(a)
         elif t == "decl-op":
             (tloc, aloc) = a[0]
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GOperatorDefinition"
-            (id, args, expr) = compileOperatorDefinition(a1)
+            (id, args, expr) = compile_operator_definition(a1)
             if id in self.wrappers.keys():
                 od = OperatorExpression(
                     id, args, BuiltinExpression(id, args, self.wrappers[id])
@@ -237,7 +237,7 @@ class Module:
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GFunctionDefinition"
-            (id, args, expr) = compileFunctionDefinition(a1)
+            (id, args, expr) = compile_function_definition(a1)
             od = OperatorExpression(id, args, expr)
             self.operators[id] = od
             if aloc is None:
@@ -252,7 +252,7 @@ class Module:
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
-            self.compileModuleDefinition(a1, tloc is not None, loaded_modules, module_path)
+            self.compile_module_definition(a1, tloc is not None, loaded_modules, module_path)
         elif t in {"GTheorem", "GAssumption", "GDivider"}:
             pass
         elif t == "GModule":
@@ -260,8 +260,8 @@ class Module:
             mod.compile(ast, loaded_modules, module_path)
             name_stack[-1][mod.name] = mod
         else:
-            logger.info(f"compileUnit {ast=}", )
-            assert False
+            logger.error(f"Fail compile_unit {ast=}", )
+            raise AssertionError("Invalid unit")
 
     # Get operators from EXTENDS clause
     def extends(self, ast, loaded_modules: ModuleLoader, module_path: str):
@@ -306,7 +306,7 @@ class Module:
         (t2, a2) = a[2]
         assert t2 == "AtLeast0"
         for ast2 in a2:
-            self.compileUnit(ast2, loaded_modules, module_path)
+            self.compile_unit(ast2, loaded_modules, module_path)
 
         if verbose:
             logger.info(f"{self.name} Variables: {self.variables}")
@@ -455,7 +455,7 @@ class ModInst:
                 assert t5 == "Identifier"
                 (t6, a6) = a4[1]
                 assert t6 == "GArgument"
-                d[a5.lexeme] = compileExpression(a6)
+                d[a5.lexeme] = compile_expression(a6)
 
         # We now need to replace all the constants and variables in the
         # operators of the module.  Some may have been specified using
@@ -526,8 +526,8 @@ ReservedWords = [
 ####    Compiler: AST pretty printer
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 
-# For printAST: AST nodes that have lists of nodes as arguments
-listNodes = [
+# For print_ast: AST nodes that have lists of nodes as arguments
+LIST_NODES = [
     "Concat",
     "Index",
     "GModule",
@@ -545,8 +545,8 @@ listNodes = [
     "square",
 ]
 
-# printAST: AST nodes that have another AST node as argument
-tagNodes = [
+# print_ast: AST nodes that have another AST node as argument
+TAG_NODES = [
     "GUnit",
     "GTheorem",
     "GBasicExpression",
@@ -564,45 +564,45 @@ tagNodes = [
 
 # Pretty printer for AST.  Every node in the AST is of the form (t, a),
 # where 't' is the type and 'a' is what's in the node
-def printAST(x, indent):
+def print_ast(x, indent):
     (t, a) = x
     if not t:
         print("ERROR: " + str(a))
         return
     print(indent + "(" + t + ",", end="")
-    if t in listNodes:
+    if t in LIST_NODES:
         print()
         print(indent + ".[")
         for y in a:
-            printAST(y, indent + "..")
+            print_ast(y, indent + "..")
         print(indent + ".]")
         print(indent + ")")
-    elif t in tagNodes:
+    elif t in TAG_NODES:
         print()
-        printAST(a, indent + "..")
+        print_ast(a, indent + "..")
         print(indent + ")")
     elif t.startswith("Infix"):
         (op, lhs, rhs) = a
         print(" " + op + ":")
-        printAST(lhs, indent + "..")
-        printAST(rhs, indent + "..")
+        print_ast(lhs, indent + "..")
+        print_ast(rhs, indent + "..")
         print(indent + ")")
     elif t.startswith("Prefix"):
         (op, expr) = a
         print(" " + op + ":")
-        printAST(expr, indent + "..")
+        print_ast(expr, indent + "..")
         print(indent + ")")
     elif t.startswith("Postfix"):
         (expr, op) = a
         print(" " + op + ":")
-        printAST(expr, indent + "..")
+        print_ast(expr, indent + "..")
         print(indent + ")")
     elif t == "Optional":
         if a is None:
             print(" None)")
         else:
             print()
-            printAST(a, indent + "..")
+            print_ast(a, indent + "..")
             print(indent + ")")
     else:
         print(" '" + str(a) + "'", end="")
@@ -621,7 +621,7 @@ shortest = []
 error = []
 
 
-def parseError(a, r: Token):
+def parse_error(a, r: Token):
     global shortest, error
     if len(r) < len(shortest):
         error = a
@@ -650,7 +650,7 @@ def match(name, s, rule, select=None):
     """
     (t, a, r) = rule.parse(s)
     if not t:
-        return parseError([name] + a, r)
+        return parse_error([name] + a, r)
     if isinstance(select, list) and t == "Concat":
         if len(select) == 1:
             return (name, a[select[0]], r)
@@ -668,7 +668,7 @@ class Rule:
     #   r: remainder of 's' that was not parsed
     # Must be redefined in child class
     def parse(self, s):
-        return parseError(["Rule.parse undefined"], s)
+        return parse_error(["Rule.parse undefined"], s)
 
 
 class GModule(Rule):
@@ -702,7 +702,7 @@ class Concat(Rule):
         for x in self.what:
             (t, a, r) = x.parse(rem)
             if not t:
-                return parseError(["Concat"] + a, r)
+                return parse_error(["Concat"] + a, r)
             result = result + [(t, a)]
             rem = r
         return ("Concat", result, rem)
@@ -722,7 +722,7 @@ class AtLeast(Rule):
             (t, a, r) = self.rule.parse(rem)
             if not t:
                 if c > 0:
-                    return parseError(["AtLeast" + str(self.count)] + a, r)
+                    return parse_error(["AtLeast" + str(self.count)] + a, r)
                 else:
                     return ("AtLeast" + str(self.count), result, rem)
             result = result + [(t, a)]
@@ -749,16 +749,16 @@ class Optional(Rule):
             return ("Optional", (t, a), r)
 
 
-class tok(Rule):
+class tok(Rule):  # noqa: N801
     def __init__(self, what):
         self.what = what
 
     def parse(self, s):
         if s == []:
-            return parseError(["tok: no more tokens"], s)
+            return parse_error(["tok: no more tokens"], s)
         if s[0].lexeme == self.what:
             return ("tok", s[0], s[1:])
-        return parseError(
+        return parse_error(
             [(f"tok: no match with '{self.what}' {s[0]}", str(s[0]))], s
         )
 
@@ -770,10 +770,10 @@ class Tok(Rule):
 
     def parse(self, s):
         if s == []:
-            return parseError(["Tok: no more tokens"], s)
+            return parse_error(["Tok: no more tokens"], s)
         if s[0].lexeme in self.what:
             return ("Tok", s[0], s[1:])
-        return parseError(["Tok: no match with " + self.name], s)
+        return parse_error(["Tok: no match with " + self.name], s)
 
 
 class Name(Rule):
@@ -782,21 +782,21 @@ class Name(Rule):
 
     def parse(self, s: list[Token]):
         if s == []:
-            return parseError(["Name"], s)
+            return parse_error(["Name"], s)
         lex = s[0].lexeme
         if lex.startswith("WF_"):
-            return parseError([("Name WF_", s[0])], s)
+            return parse_error([("Name WF_", s[0])], s)
         if lex.startswith("SF_"):
-            return parseError([("Name SF_", s[0])], s)
+            return parse_error([("Name SF_", s[0])], s)
         hasletter = False
         for c in lex:
             if not isnamechar(c):
-                return parseError([("Name with bad character", s[0])], s)
+                return parse_error([("Name with bad character", s[0])], s)
             if isletter(c):
                 hasletter = True
         if hasletter:
             return ("Name", s[0], s[1:])
-        return parseError([("Name with no letter", s[0])], s)
+        return parse_error([("Name with no letter", s[0])], s)
 
 
 class Identifier(Rule):
@@ -806,10 +806,10 @@ class Identifier(Rule):
     def parse(self, s):
         (t, a, r) = Name().parse(s)
         if t != "Name":
-            return parseError(["Identifier: not a Name"] + a, s)
+            return parse_error(["Identifier: not a Name"] + a, s)
         lex = a.lexeme
         if lex in ReservedWords:
-            return parseError([("Identifier: Name Reserved", a)], s)
+            return parse_error([("Identifier: Name Reserved", a)], s)
         return ("Identifier", a, r)
 
 
@@ -831,11 +831,11 @@ class Number(Rule):
 
     def parse(self, s: Token):
         if s == []:
-            return parseError(["Number"], s)
+            return parse_error(["Number"], s)
         lex = s[0].lexeme
         for c in lex:
             if not isnumeral(c):
-                return parseError([("Number", s[0])], s)
+                return parse_error([("Number", s[0])], s)
         return ("Number", lex, s[1:])
 
 
@@ -845,11 +845,11 @@ class String(Rule):
 
     def parse(self, s: Token):
         if s == []:
-            return parseError(["String"], s)
+            return parse_error(["String"], s)
         lex = s[0].lexeme
         if lex[0] == '"' and lex[-1] == '"':
             return ("String", lex, s[1:])
-        return parseError([("String", s[0])], s)
+        return parse_error([("String", s[0])], s)
 
 
 class SeparatorList(Rule):
@@ -885,7 +885,7 @@ class CommaList(Rule):
     def parse(self, s):
         (t, a, r) = self.what.parse(s)
         if not t:
-            return parseError(["CommaList"] + a, r)
+            return parse_error(["CommaList"] + a, r)
         rem = r
         result = [(t, a)]
         while True:
@@ -912,7 +912,7 @@ class OneOf(Rule):
                     shortest = r
                     result = (t, a, r)
         if result is None:
-            return parseError([("OneOf: no match", s)], s)
+            return parse_error([("OneOf: no match", s)], s)
         return result
 
 
@@ -1288,7 +1288,7 @@ class GExpression(Rule):
 
     def parse(self, s):
         if s == []:
-            return parseError(["GExpression: empty list"], s)
+            return parse_error(["GExpression: empty list"], s)
 
         # If at the top precedence level, get a basic expression.
         if self.level == 18:
@@ -1304,13 +1304,13 @@ class GExpression(Rule):
             (t, a, r) = GExpression(0).parse(s[1:])
             if t is False:
                 stack.pop()
-                return parseError([("GExpression" + str(self.level), s[0])] + a, r)
+                return parse_error([("GExpression" + str(self.level), s[0])] + a, r)
 
             while r != [] and junct(r[0]) == token:
                 (t2, a2, r2) = GExpression(0).parse(r[1:])
                 if not t2:
                     stack.pop()
-                    return parseError(["GExpression0"] + a2, r2)
+                    return parse_error(["GExpression0"] + a2, r2)
                 (t, a, r) = ("Infix0", (s[0], (t, a), (t2, a2)), r2)
             stack.pop()
             return (t, a, r)
@@ -1325,7 +1325,7 @@ class GExpression(Rule):
             # Parse an expression of the given precedence level.
             (t, a, r) = GExpression(prec).parse(s[1:])
             if t is False:
-                return parseError(
+                return parse_error(
                     ["GExpression" + str(self.level) + ": " + str(s[0])] + a, r
                 )
             (t, a, r) = ("Prefix" + str(prec), (s[0], (t, a)), r)
@@ -1334,7 +1334,7 @@ class GExpression(Rule):
         else:
             (t, a, r) = GExpression(self.level + 1).parse(s)
             if t is False:
-                return parseError(
+                return parse_error(
                     ["GExpression" + str(self.level) + ": " + str(s[0])] + a, r
                 )
 
@@ -1786,7 +1786,7 @@ def getprefix(ast, operators):
             assert t5 == "CommaList"
             for t, a in a5:
                 assert t == "GArgument"
-                args += [compileExpression(a)]
+                args += [compile_expression(a)]
         instances += [(a3, od, args)]
         operators = od.expr.operators
     return (operators, instances)
@@ -1798,7 +1798,7 @@ def getprefix(ast, operators):
 #   Make substitutions to create A!B!C(c)
 #   Then A!B(b)!C(c)
 #   Finally A(a)!B(b)!C(c)
-def opSubst(instances):
+def op_subst(instances):
     (lex, iop, iargs) = instances[0]
     assert isinstance(iop, OperatorExpression)
     oargs = iop.args
@@ -1808,7 +1808,7 @@ def opSubst(instances):
         expr = oexpr
     else:
         assert isinstance(oexpr, ModInst)
-        expr = opSubst(instances[1:])
+        expr = op_subst(instances[1:])
 
     # A 1st or 2nd order operator has arguments.  However, when passed as
     # an argument to another operator no arguments are specified.  In that
@@ -1835,7 +1835,7 @@ def opSubst(instances):
 
 
 # This is an expression of the form A!B(b)!C, say
-def compileOpExpression(od):
+def compile_op_expression(od):
     primed = False
 
     # print("COE", od)
@@ -1872,9 +1872,10 @@ def compileOpExpression(od):
     cargs = []
     for t, a in args:
         assert t == "GArgument"
-        comp = compileExpression(a)
+        comp = compile_expression(a)
         if comp.primed:
-            primed = True
+            # primed = True
+            pass
         cargs = cargs + [comp]
 
     # We are now at a point where we have to figure out whether this
@@ -1901,10 +1902,10 @@ def compileOpExpression(od):
         id = operators[name]
 
     assert isinstance(id, OperatorExpression)
-    return opSubst(instances + [(a2, id, cargs)])
+    return op_subst(instances + [(a2, id, cargs)])
 
 
-def compileQuantBoundExpression(which, qs, ex):
+def compile_quant_bound_expression(which, qs, ex):
     quantifiers = []
     domains = []
     (t, a) = qs
@@ -1913,7 +1914,7 @@ def compileQuantBoundExpression(which, qs, ex):
     for q in a:  # loop through these
         (t2, a2) = q
         assert t2 == "GQuantifierBound"
-        domain = compileExpression(a2[1])
+        domain = compile_expression(a2[1])
         (t3, a3) = a2[0]
         assert t3 in {"CommaList", "Tuple"}
         assert t3 == "CommaList"  # ignore tuples for now
@@ -1923,7 +1924,7 @@ def compileQuantBoundExpression(which, qs, ex):
             domains += [domain]
 
     name_stack.append({bv.id: bv for bv in quantifiers})
-    expr = compileExpression(ex)
+    expr = compile_expression(ex)
     name_stack.pop()
 
     if which == "exists":
@@ -1942,10 +1943,10 @@ def compileQuantBoundExpression(which, qs, ex):
         return GenExpression(
             expr=expr, quantifiers=quantifiers, domains=domains, primed=expr.primed
         )
-    assert False
+    raise ValueError("Invalid quantifier type")
 
 
-def compileQuantUnboundExpression(which, func):
+def compile_quant_unbound_expression(which, func):
     quantifiers = []
     (t, a) = func[0]
     assert t == "CommaList"  # one or more quantifiers
@@ -1956,90 +1957,90 @@ def compileQuantUnboundExpression(which, func):
         quantifiers += [VariableExpression(a2.lexeme)]
 
     name_stack.append({bv.id: bv for bv in quantifiers})
-    expr = compileExpression(func[1])
+    expr = compile_expression(func[1])
     name_stack.pop()
 
     if which == "temporal_exists":
-        return Temporal_existsExpression(
+        return TemporalExistsExpression(
             quantifiers=quantifiers, expr=expr, primed=expr.primed
         )
     if which == "temporal_forall":
-        return Temporal_forallExpression(
+        return TemporalForallExpression(
             quantifiers=quantifiers, expr=expr, primed=expr.primed
         )
-    assert False
+    raise ValueError("Invalid quantifier type")
 
 
-def compileExpression(ast):
+def compile_expression(ast):
     (t, a) = ast
     if t is False:
-        print("compileExpression", a)
-        assert False
+        print("compile_expression", a)
+        raise ValueError("compile_expression `token` is False")
     elif t == "op":
-        return compileOpExpression(a)
+        return compile_op_expression(a)
     elif t in {"arg-prefix", "arg-infix", "arg-postfix"}:
-        return compileOpExpression([a, ("Optional", None)])
+        return compile_op_expression([a, ("Optional", None)])
     elif t in {"exists", "forall", "lambda"}:
-        return compileQuantBoundExpression(t, a[0], a[1])
+        return compile_quant_bound_expression(t, a[0], a[1])
     elif t == "gen":
-        return compileQuantBoundExpression(t, a[1], a[0])
+        return compile_quant_bound_expression(t, a[1], a[0])
     elif t in {"temporal_exists", "temporal_forall"}:
-        return compileQuantUnboundExpression(t, a)
+        return compile_quant_unbound_expression(t, a)
     elif t in {"GBasicExpression", "parentheses"}:
-        return compileExpression(a)
+        return compile_expression(a)
     elif t == "Tuple":
-        return TupleExpression().fromAST(a)
+        return TupleExpression().from_ast(a)
     elif t == "set":
-        return SetExpression().fromAST(a)
+        return SetExpression().from_ast(a)
     elif t == "filter":
-        return FilterExpression().fromAST(a)
+        return FilterExpression().from_ast(a)
     elif t == "Number":
         return NumberExpression(a)
     elif t == "String":
         return StringExpression(a[1:-1])
     elif t == "Index":
-        return IndexExpression().fromAST(a)
+        return IndexExpression().from_ast(a)
     elif t.startswith("Prefix"):
-        return OutfixExpression().fromAST(a)
+        return OutfixExpression().from_ast(a)
     elif t.startswith("Postfix"):
         (expr, op) = a
         if op.lexeme == "'":
-            return PrimeExpression().fromAST(expr)
+            return PrimeExpression().from_ast(expr)
         else:
-            return OutfixExpression().fromAST(a)
+            return OutfixExpression().from_ast(a)
     elif t.startswith("Infix"):
-        return InfixExpression().fromAST(a)
+        return InfixExpression().from_ast(a)
     elif t == "Cartesian":
-        return CartesianExpression().fromAST(a)
+        return CartesianExpression().from_ast(a)
     elif t == "choose":
-        return ChooseExpression().fromAST(a)
+        return ChooseExpression().from_ast(a)
     elif t == "if":
-        return IfExpression().fromAST(a)
+        return IfExpression().from_ast(a)
     elif t == "case":
-        return CaseExpression().fromAST(a)
+        return CaseExpression().from_ast(a)
     elif t == "let":
-        return LetExpression().fromAST(a)
+        return LetExpression().from_ast(a)
     elif t == "recordvalue":
-        return RecordvalueExpression().fromAST(a)
+        return RecordvalueExpression().from_ast(a)
     elif t == "funcset":
-        return FuncsetExpression().fromAST(a)
+        return FuncsetExpression().from_ast(a)
     elif t == "except":
-        return ExceptExpression().fromAST(a)
+        return ExceptExpression().from_ast(a)
     elif t == "square":
-        return SquareExpression().fromAST(a)
+        return SquareExpression().from_ast(a)
     elif t == "recorddef":
-        return RecorddefExpression().fromAST(a)
+        return RecorddefExpression().from_ast(a)
     elif t in {"wf", "sf"}:
         return FairnessExpression(t, a)
     elif t == "at":
         return name_find("@")
     else:
-        print("Can't compile ", ast)
+        logger.error("Can't compile ", ast)
         return None
 
 
 # handle an "Operator(args) == Expression" definition
-def compileOperatorDefinition(od):
+def compile_operator_definition(od):
     (t0, a0) = od[0]
     if t0 == "GNonFixLHS":
         assert len(a0) == 2
@@ -2072,7 +2073,7 @@ def compileOperatorDefinition(od):
             elif t2 == "infixOp":
                 cargs = cargs + [(a2, 2)]
             else:
-                assert False
+                raise ValueError("Invalid operator declaration")
     elif t0 == "prefix":
         (t1, a1) = a0
         assert t1 == "Concat"
@@ -2103,13 +2104,13 @@ def compileOperatorDefinition(od):
         id = a3.lexeme
         cargs = [(a2.lexeme, 0)]
     else:
-        print("compileOperatorDefinition", t0, a0)
-        assert False
+        logger.error(f"compile_operator_definition {t0} {a0}")
+        raise ValueError("Invalid operator definition")
 
     # print("OD", modstk[-1].name, id)
     args = [ArgumentExpression(a, n) for (a, n) in cargs]
     name_stack.append({a.id: a for a in args})
-    ce = compileExpression(od[1])
+    ce = compile_expression(od[1])
     name_stack.pop()
 
     return (id, args, ce)
@@ -2117,13 +2118,13 @@ def compileOperatorDefinition(od):
 
 # handle a "Function[args] == Expression" definition.  Define as
 #   f[x \in D] == e  ==>   f == CHOOSE f: f = [x \ D: e]
-def compileFunctionDefinition(od):
+def compile_function_definition(od):
     (t0, a0) = od[0]
     assert t0 == "Identifier"
     id = a0.lexeme
     bve = BoundvarExpression(id)
     name_stack.append({id: bve})
-    f = compileQuantBoundExpression("lambda", od[1], od[2])
+    f = compile_quant_bound_expression("lambda", od[1], od[2])
     name_stack.pop()
     (op, file, column, first) = a0
     infix = InfixExpression(op=("=", file, column, first), lhs=bve, rhs=f)
@@ -2138,18 +2139,18 @@ class Expression:
     def __repr__(self):
         return self.__str__()
 
-    def runInit(self, containers, boundedvars):
-        print("runInit", self)
-        assert False
+    def run_init(self, containers, boundedvars):
+        logger.error("run_init", self)
+        raise NotImplementedError("run_init not implemented")
 
     def eval(self, containers, boundedvars):
-        print("Eval: ", self)
-        assert False
+        logger.error("Eval: ", self)
+        raise NotImplementedError("eval not implemented")
 
     def apply(self, containers, boundedvars, fargs):
         v = self.eval(containers, boundedvars)
         if v is None:
-            print("Default apply", self, fargs)
+            logger.info(f"Default apply {self} {fargs}")
         assert v is not None
         return funceval(v, fargs)
 
@@ -2309,15 +2310,10 @@ class ArgumentExpression(Expression):
             return subs[self]
 
     def eval(self, containers, boundedvars):
-        print(
-            "Error: argument",
-            self.id,
-            "not realized",
-            self.nargs,
-            containers,
-            boundedvars,
+        logger.error(
+            f"Argument {self.id} not realized {self.nargs} {containers} {boundedvars}"
         )
-        assert False
+        raise ValueError("Argument not realized")
 
 
 # This is like an ArgumentExpression with arguments of its own (i.e., an
@@ -2356,8 +2352,8 @@ class ParameterExpression(Expression):
             )
 
     def eval(self, containers, boundedvars):
-        print("Error: parameter", self.argument, "not realized")
-        assert False
+        logger.error(f"Parameter {self.argument} not realized")
+        raise ValueError("Parameter not realized")
 
 
 class OperatorExpression(Expression):
@@ -2420,10 +2416,10 @@ class SquareExpression(Expression):
         self.rhs = rhs
         self.primed = primed
 
-    def fromAST(self, exprs):
+    def from_ast(self, exprs):
         assert len(exprs) == 2
-        self.lhs = compileExpression(exprs[0])
-        self.rhs = compileExpression(exprs[1])
+        self.lhs = compile_expression(exprs[0])
+        self.rhs = compile_expression(exprs[1])
         assert not self.rhs.primed
         self.primed = self.lhs.primed
         return self
@@ -2447,8 +2443,8 @@ class FairnessExpression(Expression):
         if t0 == "Identifier":
             self.lhs = VariableExpression(id=a0.lexeme)
         else:
-            self.lhs = compileExpression(a[0])
-        self.rhs = compileExpression(a[1])
+            self.lhs = compile_expression(a[0])
+        self.rhs = compile_expression(a[1])
         assert not self.lhs.primed
         self.primed = self.rhs.primed
 
@@ -2651,7 +2647,7 @@ class GenExpression(Expression):
         return frozenset(result)
 
 
-class Temporal_existsExpression(Expression):
+class TemporalExistsExpression(Expression):
     def __init__(self, quantifiers=None, expr=None, containers=None, primed=False):
         self.quantifiers = quantifiers
         self.expr = expr
@@ -2667,14 +2663,14 @@ class Temporal_existsExpression(Expression):
             containers = subs.copy()
             for id in self.quantifiers:
                 containers[id] = ContainerExpression(var=id)
-            return Temporal_existsExpression(
+            return TemporalExistsExpression(
                 quantifiers=self.quantifiers,
                 expr=self.expr.substitute(containers),
                 containers=containers,
                 primed=self.primed,
             )
         else:
-            return Temporal_existsExpression(
+            return TemporalExistsExpression(
                 quantifiers=self.quantifiers,
                 expr=self.expr.substitute(subs),
                 containers=self.containers,
@@ -2685,12 +2681,29 @@ class Temporal_existsExpression(Expression):
         return self.expr.eval(self.containers, boundedvars)
 
 
+class TemporalForallExpression(Expression):
+    def __init__(self, quantifiers=None, expr=None, containers=None, primed=False):
+        self.quantifiers = quantifiers
+        self.expr = expr
+        self.containers = containers
+        self.primed = self.expr.primed
+
+    def __str__(self):
+        return "TempForAll(" + str(self.quantifiers) + ", " + self.expr.__str__() + ")"
+
+    def substitute(self, subs):
+        raise NotImplementedError("substitute not implemented")
+
+    def eval(self, containers, boundedvars):
+        raise NotImplementedError("eval not implemented")
+
+
 class RecorddefExpression(Expression):
     def __init__(self, kvs=None, primed=False):
         self.kvs = kvs
         self.primed = primed
 
-    def fromAST(self, ast):
+    def from_ast(self, ast):
         (t, a) = ast
         assert t == "CommaList"
         self.kvs = dict()
@@ -2700,7 +2713,7 @@ class RecorddefExpression(Expression):
             assert len(a2) == 3
             (t3, a3) = a2[0]
             assert t3 == "Name"
-            expr = compileExpression(a2[2])
+            expr = compile_expression(a2[2])
             self.kvs[a3.lexeme] = expr
             self.primed = self.primed or expr.primed
         return self
@@ -2742,7 +2755,7 @@ class RecordvalueExpression(Expression):
         self.kvs = kvs
         self.primed = primed
 
-    def fromAST(self, ast):
+    def from_ast(self, ast):
         (t, a) = ast
         assert t == "CommaList"
         self.kvs = dict()
@@ -2752,7 +2765,7 @@ class RecordvalueExpression(Expression):
             assert len(a2) == 3
             (t3, a3) = a2[0]
             assert t3 == "Name"
-            expr = compileExpression(a2[2])
+            expr = compile_expression(a2[2])
             self.kvs[a3.lexeme] = expr
             self.primed = self.primed or expr.primed
         return self
@@ -2783,10 +2796,10 @@ class FuncsetExpression(Expression):
         self.rhs = rhs
         self.primed = primed
 
-    def fromAST(self, exprs):
+    def from_ast(self, exprs):
         assert len(exprs) == 2
-        self.lhs = compileExpression(exprs[0])
-        self.rhs = compileExpression(exprs[1])
+        self.lhs = compile_expression(exprs[0])
+        self.rhs = compile_expression(exprs[1])
         self.primed = self.lhs.primed or self.rhs.primed
         return self
 
@@ -2823,9 +2836,9 @@ class ExceptExpression(Expression):
         self.at = at
         self.primed = primed
 
-    def fromAST(self, exc):
+    def from_ast(self, exc):
         assert len(exc) == 2
-        self.lhs = compileExpression(exc[0])
+        self.lhs = compile_expression(exc[0])
         self.at = BoundvarExpression("@")
         self.primed = self.lhs.primed
         (t, a) = exc[1]
@@ -2843,7 +2856,7 @@ class ExceptExpression(Expression):
                     assert len(a3) > 0
                     indices = []
                     for e in a3:
-                        ce = compileExpression(e)
+                        ce = compile_expression(e)
                         if ce.primed:
                             self.primed = True
                         indices += [ce]
@@ -2852,7 +2865,7 @@ class ExceptExpression(Expression):
                     assert t3 == "Name"
                     args += [[StringExpression(a3.lexeme)]]
             name_stack.append({"@": self.at})
-            cexpr = compileExpression(expr)
+            cexpr = compile_expression(expr)
             name_stack.pop()
             if cexpr.primed:
                 self.primed = True
@@ -2903,10 +2916,10 @@ class ExceptExpression(Expression):
             assert len(iargs) == 1  # TODO doesn't handle ![][]...
             a = iargs[0]
             vals = [arg.eval(containers, boundedvars) for arg in a]
-            newBVs = boundedvars.copy()
+            new_bvs = boundedvars.copy()
             old = funceval(lhs, vals)
-            newBVs[self.at] = ValueExpression(old)
-            new = iexpr.eval(containers, newBVs)
+            new_bvs[self.at] = ValueExpression(old)
+            new = iexpr.eval(containers, new_bvs)
             if len(vals) == 1:
                 kvs[vals[0]] = new
             else:
@@ -2920,8 +2933,8 @@ class PrimeExpression(Expression):
         assert primed
         self.primed = primed
 
-    def fromAST(self, expr):
-        self.expr = compileExpression(expr)
+    def from_ast(self, expr):
+        self.expr = compile_expression(expr)
         assert self.expr.primed is False
         return self
 
@@ -2944,7 +2957,7 @@ class OutfixExpression(Expression):
         self.expr = expr
         self.primed = primed
 
-    def fromAST(self, prefix):
+    def from_ast(self, prefix):
         (op, expr) = prefix
         lex = op.lexeme
         self.op = "-." if lex == "-" else lex
@@ -2954,10 +2967,10 @@ class OutfixExpression(Expression):
             id = mod.operators[self.op]
             assert isinstance(id, OperatorExpression)
             assert len(id.args) == 1
-            args = [compileExpression(expr)]
-            return opSubst([(op, id, args)])
+            args = [compile_expression(expr)]
+            return op_subst([(op, id, args)])
 
-        self.expr = compileExpression(expr)
+        self.expr = compile_expression(expr)
         assert not isinstance(self.expr, tuple)
 
         if self.op == "-." and isinstance(self.expr, NumberExpression):
@@ -3048,10 +3061,10 @@ class OutfixExpression(Expression):
         if self.op == "[]":
             return self.always(containers, boundedvars)
 
-        v = self.expr.eval(containers, boundedvars)
+        _v = self.expr.eval(containers, boundedvars)
 
-        print("Outfix operator", self.op, "not defined")
-        assert False
+        logger.error(f"Outfix operator {self.op} not defined")
+        raise ValueError("Outfix operator not defined")
 
 
 class ChooseExpression(Expression):
@@ -3061,17 +3074,17 @@ class ChooseExpression(Expression):
         self.expr = expr
         self.primed = primed
 
-    def fromAST(self, expr):
+    def from_ast(self, expr):
         assert len(expr) == 3
         (t, a) = expr[0]
         assert t == "Identifier"
         self.id = BoundvarExpression(a.lexeme)
         (t1, a1) = expr[1]
         assert t1 == "Optional"
-        self.domain = None if a1 is None else compileExpression(a1)
+        self.domain = None if a1 is None else compile_expression(a1)
 
         name_stack.append({self.id.id: self.id})
-        self.expr = compileExpression(expr[2])
+        self.expr = compile_expression(expr[2])
         name_stack.pop()
         self.primed = False
         return self
@@ -3096,7 +3109,7 @@ class ChooseExpression(Expression):
         )
 
     def eval(self, containers, boundedvars):
-        newBV = boundedvars.copy()
+        new_bv = boundedvars.copy()
         if self.domain is None:
             if (
                 isinstance(self.expr, InfixExpression)
@@ -3106,18 +3119,18 @@ class ChooseExpression(Expression):
             ):
                 if self.expr.op.lexeme == "=":
                     func = self.expr.rhs
-                    newBV[self.id] = func
-                    return func.eval(containers, newBV)
+                    new_bv[self.id] = func
+                    return func.eval(containers, new_bv)
                 if self.expr.op.lexeme == "\\in":
                     func = self.expr.rhs
-                    newBV[self.id] = func
-                    s = sorted(func.eval(containers, newBV), key=lambda x: key(x))
+                    new_bv[self.id] = func
+                    s = sorted(func.eval(containers, new_bv), key=lambda x: key(x))
                     return s[0]
                 if self.expr.op.lexeme == "\\notin":
                     # CHOOSE of same expression should return same value...
                     x = val_to_string(self.expr.rhs)
                     return Nonce(x.__hash__())
-                assert False
+                raise ValueError("ChooseExpression: unknown operator")
             elif isinstance(self.expr, ValueExpression) and isinstance(
                 self.expr.value, bool
             ):
@@ -3127,25 +3140,25 @@ class ChooseExpression(Expression):
                 self.domain.eval(containers, boundedvars), key=lambda x: key(x)
             )
             for x in domain:
-                newBV[self.id] = ValueExpression(x)
-                r = self.expr.eval(containers, newBV)
+                new_bv[self.id] = ValueExpression(x)
+                r = self.expr.eval(containers, new_bv)
                 if r:
                     return x
-        print("CHOOSE", self)
-        assert False
+        logger.error(f"CHOOSE {self}")
+        raise ValueError("ChooseExpression: no value found")
 
     def apply(self, containers, boundedvars, fargs):
-        newBV = boundedvars.copy()
+        new_bv = boundedvars.copy()
         if (
             self.domain is None
             and isinstance(self.expr, InfixExpression)
-            and self.expr.op.lexeme == "="
+            and self.expr.op[0] == "="
             and isinstance(self.expr.lhs, BoundvarExpression)
             and self.expr.lhs == self.id
         ):
             func = self.expr.rhs
-            newBV[self.id] = func
-            return func.apply(containers, newBV, fargs)
+            new_bv[self.id] = func
+            return func.apply(containers, new_bv, fargs)
         else:
             v = self.eval(containers, boundedvars)
             return funceval(v, fargs)
@@ -3159,11 +3172,11 @@ class IfExpression(Expression):
         self.elseexpr = elseexpr
         self.primed = primed
 
-    def fromAST(self, expr):
+    def from_ast(self, expr):
         assert len(expr) == 3
-        self.cond = compileExpression(expr[0])
-        self.ifexpr = compileExpression(expr[1])
-        self.elseexpr = compileExpression(expr[2])
+        self.cond = compile_expression(expr[0])
+        self.ifexpr = compile_expression(expr[1])
+        self.elseexpr = compile_expression(expr[2])
         self.primed = self.cond.primed or self.ifexpr.primed or self.elseexpr.primed
         return self
 
@@ -3200,7 +3213,7 @@ class CaseExpression(Expression):
         self.other = other
         self.primed = primed
 
-    def fromAST(self, expr):
+    def from_ast(self, expr):
         (t0, a0) = expr[0]
         assert t0 == "SeparatorList"
         (t1, a1) = expr[1]
@@ -3210,8 +3223,8 @@ class CaseExpression(Expression):
         self.cases = []
         for t2, a2 in a0:
             assert t2 == "Concat"
-            cond = compileExpression(a2[0])
-            val = compileExpression(a2[2])
+            cond = compile_expression(a2[0])
+            val = compile_expression(a2[2])
             self.cases += [(cond, val)]
             if cond.primed or val.primed:
                 self.primed = True
@@ -3219,7 +3232,7 @@ class CaseExpression(Expression):
         if a1 is None:
             self.other = None
         else:
-            self.other = compileExpression(a1)
+            self.other = compile_expression(a1)
             self.primed = self.primed or self.other.primed
 
         return self
@@ -3258,7 +3271,7 @@ class LetExpression(Expression):
         self.expr = expr
         self.primed = primed
 
-    def fromAST(self, expr):
+    def from_ast(self, expr):
         assert len(expr) == 2
         (t, a) = expr[0]
         assert t == "AtLeast1"
@@ -3277,15 +3290,15 @@ class LetExpression(Expression):
         for d in a:
             (t1, a1) = d
             if t1 == "GOperatorDefinition":
-                (id, args, e) = compileOperatorDefinition(a1)
+                (id, args, e) = compile_operator_definition(a1)
             else:
                 assert t1 == "GFunctionDefinition"  # deal with ModDef later
-                (id, args, e) = compileFunctionDefinition(a1)
+                (id, args, e) = compile_function_definition(a1)
             od = OperatorExpression(id, args, e)
             self.mod.operators[id] = od
             self.mod.globals.add(id)
             ops[id] = od
-        self.expr = compileExpression(expr[1])
+        self.expr = compile_expression(expr[1])
         name_stack.pop()
         modstk.pop()
 
@@ -3301,10 +3314,10 @@ class LetExpression(Expression):
         # return LetExpression(mod=self.mod,
         #     expr=self.expr.substitute(subs),
         #     primed=self.primed)
-        assert False
+        raise NotImplementedError("LetExpression: substitute not implemented")
 
     def eval(self, containers, boundedvars):
-        assert False
+        raise NotImplementedError("LetExpression: eval not implemented")
 
 
 # Cartesian product
@@ -3313,8 +3326,8 @@ class CartesianExpression(Expression):
         self.exprs = exprs
         self.primed = primed
 
-    def fromAST(self, cart):
-        self.exprs = [compileExpression(x) for x in cart]
+    def from_ast(self, cart):
+        self.exprs = [compile_expression(x) for x in cart]
         self.primed = any(x.primed for x in self.exprs)
         return self
 
@@ -3351,19 +3364,19 @@ class InfixExpression(Expression):
         self.rhs = rhs
         self.primed = primed
 
-    def fromAST(self, infix):
+    def from_ast(self, infix):
         (op, lhs, rhs) = infix
 
         lex = op.lexeme
-        lt = compileExpression(lhs)
-        rt = compileExpression(rhs)
+        lt = compile_expression(lhs)
+        rt = compile_expression(rhs)
         mod = modstk[-1]
 
         if lex in mod.operators:
             id = mod.operators[lex]
             assert isinstance(id, OperatorExpression)
             assert len(id.args) == 2
-            return opSubst([(op, id, [lt, rt])])
+            return op_subst([(op, id, [lt, rt])])
 
         self.op = op
         self.lhs = lt
@@ -3475,8 +3488,8 @@ class InfixExpression(Expression):
             print(traceback.format_exc())
             exit(1)
 
-        print("Infix operator", self.op, "not defined")
-        assert False
+        logger.error(f"Infix operator {self.op} not defined")
+        raise ValueError("Infix operator not defined")
 
 
 # Apply the given arguments in vals to func
@@ -3509,8 +3522,8 @@ def funceval(func, vals):
     if v is not None:
         return v
 
-    print("FUNCEVAL", func, vals, kvs, k)
-    assert False
+    logger.error(f"FUNCEVAL {func} {vals} {kvs} {k}")
+    raise ValueError("Function evaluation failed")
 
 
 # v is either a string, a tuple of values, or a FrozenDict.
@@ -3546,16 +3559,16 @@ class IndexExpression(Expression):
         self.args = args
         self.primed = primed
 
-    def fromAST(self, expr):
+    def from_ast(self, expr):
         (token, func, args) = expr
         self.token = token
-        self.func = compileExpression(func)
+        self.func = compile_expression(func)
         self.primed = self.func.primed
         (t, a) = args
         assert t == "CommaList"
         self.args = []
         for ast in a:
-            ca = compileExpression(ast)
+            ca = compile_expression(ast)
             if ca.primed:
                 self.primed = True
             self.args += [ca]
@@ -3591,7 +3604,7 @@ class TupleExpression(Expression):
         self.exprs = exprs
         self.primed = primed
 
-    def fromAST(self, ast):
+    def from_ast(self, ast):
         self.primed = False
         (t, a) = ast
         assert t == "Optional"
@@ -3600,7 +3613,7 @@ class TupleExpression(Expression):
         else:
             (t1, a1) = a
             assert t1 == "CommaList"
-            self.exprs = [compileExpression(x) for x in a1]
+            self.exprs = [compile_expression(x) for x in a1]
             for e in self.exprs:
                 if e.primed:
                     self.primed = True
@@ -3637,7 +3650,7 @@ class SetExpression(Expression):
         self.elements = elements
         self.primed = primed
 
-    def fromAST(self, ast):
+    def from_ast(self, ast):
         (t, a) = ast
         assert t == "Optional"
         self.primed = False
@@ -3646,7 +3659,7 @@ class SetExpression(Expression):
             (t0, a0) = a
             assert t0 == "CommaList"
             for x in a0:
-                cx = compileExpression(x)
+                cx = compile_expression(x)
                 if cx.primed:
                     self.primed = True
                 self.elements += [cx]
@@ -3682,7 +3695,7 @@ class FilterExpression(Expression):
         self.expr = expr
         self.primed = primed
 
-    def fromAST(self, filter):
+    def from_ast(self, filter):
         (t0, a0) = filter[0]
         if t0 == "Identifier":
             self.vars = [BoundvarExpression(a0.lexeme)]
@@ -3691,9 +3704,9 @@ class FilterExpression(Expression):
             (t1, a1) = a0
             assert t1 == "CommaList"
             self.vars = [BoundvarExpression(v) for (t, v) in a1]
-        self.elements = compileExpression(filter[1])
+        self.elements = compile_expression(filter[1])
         name_stack.append({bv.id: bv for bv in self.vars})
-        self.expr = compileExpression(filter[2])
+        self.expr = compile_expression(filter[2])
         name_stack.pop()
         return self
 

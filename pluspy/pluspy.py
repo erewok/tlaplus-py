@@ -66,8 +66,8 @@ class PlusPy:
             v: ContainerExpression(var=v) for v in self.mod.variables.values()
         }
 
-    def init(self, initOp):
-        op = self.mod.operators[initOp]
+    def init(self, init_op):
+        op = self.mod.operators[init_op]
         assert isinstance(op, OperatorExpression)
         assert op.args == []
 
@@ -128,8 +128,8 @@ class PlusPy:
         return r
 
     # TODO.  Should support multiple arguments
-    def next(self, nextOp, arg=None):
-        op = self.mod.operators[nextOp]
+    def next(self, next_op, arg=None):
+        op = self.mod.operators[next_op]
         assert isinstance(op, OperatorExpression)
         return self.trynext(op.expr, op.args, arg)
 

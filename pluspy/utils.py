@@ -1,9 +1,10 @@
 """
 This module contains utility functions and classes used by the compiler.
 """
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-####    Compiler: convenient routines
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def islower(c):
     return c in "abcdefghijklmnopqrstuvwxyz"
@@ -89,8 +90,8 @@ def key(v):
         return (5, sorted(lst))
     if isinstance(v, Nonce):
         return (6, v.id)
-    print(v)
-    assert False
+    logger.error(f"Unsortable value: {v}")
+    raise ValueError(f"key: unknown type for sorting {v}")
 
 # Convert a value to a string in TLA+ format
 def val_to_string(v):

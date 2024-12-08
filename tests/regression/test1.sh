@@ -8,5 +8,5 @@ then
         exit 0
     fi
 fi
-echo 'test1 failed'
+echo 'test1.sh failed; See output files: test1.out and test1.out2'
 exit 1

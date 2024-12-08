@@ -54,6 +54,7 @@ regressions:
         ./tests/regression/test$i.sh
         case $? in
         0)
+            echo test $i passed
             ;;
         *)
             echo test $i failed

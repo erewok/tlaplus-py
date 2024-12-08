@@ -33,8 +33,8 @@ DEFAULT_MODULE_PATH = ".:./modules/lib:./modules/book:./modules/other"
 def main():
     pluspypath = os.environ.get("PLUSPYPATH", DEFAULT_MODULE_PATH)
     # Get options.  First set default values
-    initOp = "Init"
-    nextOps = set()
+    init_op = "Init"
+    next_ops = set()
     seed = None
     try:
         opts, args = getopt.getopt(sys.argv[1:],
@@ -53,9 +53,9 @@ def main():
         elif o in { "-h", "--help" }:
             usage()
         elif o in { "-i", "--init" }:
-            initOp = a
+            init_op = a
         elif o in { "-n", "--next"  }:
-            nextOps.add(a)
+            next_ops.add(a)
         elif o in { "-P", "--path" }:
             pluspypath = a
         elif o in { "-s" }:
@@ -63,7 +63,7 @@ def main():
         elif o in { "-S", "--seed" }:
             seed = int(a)
         else:
-            assert False, "unhandled option"
+            raise ValueError("unhandled option")
     if len(args) != 1:
         usage()
 
@@ -79,7 +79,7 @@ def main():
         logger.info("---------------")
         logger.info("Initialize state")
         logger.info("---------------")
-    pp.init(initOp)
+    pp.init(init_op)
     if not silent:
         logger.info(f"Initial context: {val_to_string(pp.getall())}")
 
@@ -89,9 +89,9 @@ def main():
         logger.info(f"Run behavior for {parser.maxcount} steps")
         logger.info("---------------")
 
-    if len(nextOps) != 0:
+    if len(next_ops) != 0:
         threads = set()
-        for next in nextOps:
+        for next in next_ops:
             t = threading.Thread(target=run, args=(pp, next), kwargs={"silent": silent, "verbose": verbose})
             threads.add(t)
             t.start()
