@@ -12,6 +12,7 @@ from .parser import (
     ValueExpression,
 )
 from .utils import FrozenDict, simplify
+from .wrappers import build_wrappers
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class PlusPy:
         self,
         file: str,
         constants: dict | None = None,
-        modules: ModuleLoader | None = None,
+        module_loader: ModuleLoader | None = None,
         seed=None,
         module_path: str = ".:./modules/lib:./modules/book:./modules/other",
     ):
@@ -45,17 +46,17 @@ class PlusPy:
             random.seed(seed)
 
         constants = constants or {}
-        self.modules: ModuleLoader = modules or {}
+        self.mod_loader: ModuleLoader = module_loader or ModuleLoader({}, build_wrappers())
         self.module_path = module_path
         # Load the module
         self.mod = Module()
         if not file.endswith(".tla"):
             file += ".tla"
-        if not self.mod.load_from_file(file, self.modules, self.module_path):
+        if not self.mod.load_from_file(file, self.mod_loader, self.module_path):
             raise PlusPyError("can't load " + file)
 
         # Now that it has a name, we add it to the ModuleLoader
-        self.modules[self.mod.name] = self.mod
+        self.mod_loader[self.mod.name] = self.mod
 
         self.constants = {
             self.mod.constants[k]: ValueExpression(v) for (k, v) in constants.items()

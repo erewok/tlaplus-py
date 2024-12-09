@@ -1,22 +1,65 @@
-# pluspy-refactored
+# tlaplus-py
 
 This is a rewritten version of [`pluspy`](https://github.com/tlaplus/PlusPy), a Python interpreter for TLA+ specifications.
 
-I refactored the `pluspy` codebase instead for the following reasons:
+I rewrote/refactored the original `pluspy` codebase instead for the following reasons:
 
-- For self-teaching: I wanted to understand how states are generated.
-- I wanted to understand the parsing/interpretation of TLA+ specs.
-- I wanted to modify the original Python code to be closer to the contemporary Python I was used to reading (for learning).
+- To understand how states are generated when specs are evaluated.
+- To understand the parsing/interpretation of TLA+ specs.
+- To modify the original Python code to be closer to the contemporary Python I am used to reading (for learning).
 
-The existence of this codebase is not meant _in any way_ to be a judgment or reflection of opinion about the original codebase. Instead, I rewrote the original Python codebase to make it easier for me to understand while simultaneously trying to reverse engineer was doing.
+The existence of this codebase is not meant to be a reflection of opinion about the original codebase. Instead, I rewrote the original Python codebase to make it easier for me to understand while simultaneously trying to reverse engineer what it was doing.
 
-Lastly, **the code in here is also not intended to be integrated back into the original repository**.
+Lastly, **the code in here is also not intended to be integrated back into the original repository**: there's no attempt to preserve commit history, file structure, coding styles or anything from the upstream repo.
+
+Their license file is included here, however. I would prefer to give the original repo attribution, but I don't really know how best to modify the license to do that even if I completely rewrite the codebase.
+
+## Justfile
+
+I have included a `justfile` for common recipes:
+
+```sh
+❯ just
+just --list
+Available recipes:
+    bootstrap default="3.12"          # Install dependencies used by this project
+    build *args                       # Build the project as a package (uv build)
+    check                             # Run code quality checks
+    check-types                       # Run mypy checks
+    ci-test coverage_dir='./coverage' # Run the project tests for CI environment (e.g. with code coverage)
+    format                            # Run the code formatter
+    regressions                       # Run the regression tests
+    run *args                         # Run a spec
+    sync                              # Sync dependencies with environment
+    test *args                        # Run all tests locally
+```
+
+For example, to run all regression tests:
+
+```sh
+❯ just regressions
++ export PLUSPY_EXEC=./pluspy.sh
++ PLUSPY_EXEC=./pluspy.sh
++ for i in 1 2 3 4 5 6 7 9 10 11
++ echo running test 1
+running test 1
++ ./tests/regression/test1.sh
+test1 passed
++ case $? in
++ echo test 1 passed
+test 1 passed
++ for i in 1 2 3 4 5 6 7 9 10 11
++ echo running test 2
+running test 2
+...
+```
+
 
 ## Original README From `pluspy` Below
 
 `pluspy` is a TLA+ interpreter, written in Python.
 
-Run "./pluspy -h" for basic help.  The output should be something like:
+Run "./pluspy.sh -h" for basic help.  The output should be something like:
 
 ```sh
     Usage: pluspy [options] [module]
@@ -31,7 +74,7 @@ Run "./pluspy -h" for basic help.  The output should be something like:
         -v: verbose output
 ```
 
-You can also invoke `pluspy` with "-i Spec" where Spec is a full TLA+ specification.  Try for example "./pluspy -i Spec Prime", which should print the prime numbers.
+You can also invoke `pluspy` with "-i Spec" where Spec is a full TLA+ specification.  Try for example "./pluspy.sh -i Spec Prime", which should print the prime numbers.
 
 `pluspy` is a Bash shell script.  If you can't run it, try "python3 pluspy.py" instead.
 

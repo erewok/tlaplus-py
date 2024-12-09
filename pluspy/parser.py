@@ -4,11 +4,12 @@ import random
 import sys
 import threading
 import traceback
-from typing import NewType
+from typing import Optional
 
 from . import wrappers
 from .lexer import InfixOps, lexer, PostfixOps, PrefixOps, Token
 from .utils import convert, FrozenDict, isletter, isnamechar, isnumeral, key, Nonce, val_to_string
+from .wrappers import Wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,25 @@ def file_find(name, path):
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Module specification
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-ModuleLoader = NewType("ModuleLoader", dict[str, "Module"])
+class ModuleLoader:
+    __slots__ = ["loaded_modules", "wrappers"]
+
+    def __init__(self, modules: dict | None = None, wrappers: dict[str, dict[str, Wrapper]] | None = None):
+        self.loaded_modules: dict[str, Module] = modules
+        self.wrappers: dict[str, dict[str, Wrapper]] = wrappers
+
+    def get(self, key: str, default=None) -> Optional["Module"]:
+        return self.loaded_modules.get(key, default)
+
+    def __getitem__(self, key: str) -> "Module":
+        return self.loaded_modules[key]
+
+    def __setitem__(self, key: str, value: "Module") -> None:
+        self.loaded_modules[key] = value
+        return None
+
+    def get_mod_wrapper(self, module: str) -> dict[str, Wrapper] | None:
+        return self.wrappers.get(module)
 
 
 class Module:
@@ -146,7 +165,7 @@ class Module:
             name_stack[-1][id] = ve
 
     # handle an "Operator == INSTANCE name" definition
-    def compile_module_definition(self, md, is_global, loaded_modules: ModuleLoader, module_path: str):
+    def compile_module_definition(self, md, is_global, mod_loader: ModuleLoader, module_path: str):
         (t0, a0) = md[0]
         assert t0 == "GNonFixLHS"
         assert len(a0) == 2
@@ -186,7 +205,7 @@ class Module:
         mi = ModInst()
         args = [ArgumentExpression(a, c) for (a, c) in cargs]
         name_stack.append({a.id: a for a in args})
-        mi.compile(inst, loaded_modules, module_path)
+        mi.compile(inst, mod_loader, module_path)
         name_stack.pop()
 
         # We put the ModInst inside the expr field of an OperatorExpression
@@ -199,7 +218,7 @@ class Module:
             logger.info(f"++> {od}, {mi}")
 
     # handle the next TLA "Unit" in the source
-    def compile_unit(self, ast, loaded_modules: ModuleLoader, module_path: str):
+    def compile_unit(self, ast, mod_loader: ModuleLoader, module_path: str):
         (t, a) = ast
         if t == "GVariableDeclaration":
             self.compile_variable_declaration(a)
@@ -227,7 +246,7 @@ class Module:
             (tloc, aloc) = a[0]
             assert tloc == "Optional"
             mi = ModInst()
-            mi.compile(a[1], loaded_modules, module_path)
+            mi.compile(a[1], mod_loader, module_path)
             for k in mi.globals:
                 self.operators[k] = mi.operators[k]
                 if aloc is None:
@@ -252,22 +271,22 @@ class Module:
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
-            self.compile_module_definition(a1, tloc is not None, loaded_modules, module_path)
+            self.compile_module_definition(a1, tloc is not None, mod_loader, module_path)
         elif t in {"GTheorem", "GAssumption", "GDivider"}:
             pass
         elif t == "GModule":
             mod = Module()
-            mod.compile(ast, loaded_modules, module_path)
+            mod.compile(ast, mod_loader, module_path)
             name_stack[-1][mod.name] = mod
         else:
             logger.error(f"Fail compile_unit {ast=}", )
             raise AssertionError("Invalid unit")
 
     # Get operators from EXTENDS clause
-    def extends(self, ast, loaded_modules: ModuleLoader, module_path: str):
+    def extends(self, ast, mod_loader: ModuleLoader, module_path: str):
         for n, m in ast:
             assert n == "Name"
-            mod = load_module(m.lexeme, loaded_modules, module_path)
+            mod = load_module(m.lexeme, mod_loader, module_path)
             assert mod.constants == dict()
             assert mod.variables == dict()
             for k in mod.globals:
@@ -278,7 +297,7 @@ class Module:
                 name_stack[-1][k] = mod.operators[k]
 
     # Given AST, handle all the TLA+ units in the AST
-    def compile(self, ast, loaded_modules: ModuleLoader, module_path: str):
+    def compile(self, ast, mod_loader: ModuleLoader, module_path: str):
         (t, a) = ast
         if t is False:
             return False
@@ -289,7 +308,7 @@ class Module:
         self.name = a0.lexeme
 
         # Set wrappers
-        self.wrappers = wrappers.wrappers.get(self.name)
+        self.wrappers = mod_loader.get_mod_wrapper(self.name)
         if self.wrappers is None:
             self.wrappers = {}
 
@@ -301,12 +320,12 @@ class Module:
         if a1 is not None:
             (tx, ax) = a1
             assert tx == "CommaList"
-            self.extends(ax, loaded_modules, module_path)
+            self.extends(ax, mod_loader, module_path)
 
         (t2, a2) = a[2]
         assert t2 == "AtLeast0"
         for ast2 in a2:
-            self.compile_unit(ast2, loaded_modules, module_path)
+            self.compile_unit(ast2, mod_loader, module_path)
 
         if verbose:
             logger.info(f"{self.name} Variables: {self.variables}")
@@ -315,7 +334,7 @@ class Module:
         return True
 
     # Load and compile the given TLA+ source, which is a string
-    def load_from_string(self, source, srcid, loaded_modules: ModuleLoader, module_path: str):
+    def load_from_string(self, source, srcid, mod_loader: ModuleLoader, module_path: str):
         # First run source through lexical analysis
         tokens: list[Token] = lexer(source, srcid)
         if verbose:
@@ -353,38 +372,38 @@ class Module:
             logger.info("---------------")
 
         modstk.append(self)
-        result = self.compile((t, a), loaded_modules, module_path)
+        result = self.compile((t, a), mod_loader, module_path)
         modstk.pop()
 
         return result
 
-    def load(self, f, srcid, loaded_modules: ModuleLoader, module_path: str):
+    def load(self, f, srcid, mod_loader: ModuleLoader, module_path: str):
         all = ""
         for line in f:
             all += line
-        return self.load_from_string(all, srcid, loaded_modules, module_path)
+        return self.load_from_string(all, srcid, mod_loader, module_path)
 
-    def load_from_file(self, file, loaded_modules: ModuleLoader, module_path: str):
+    def load_from_file(self, file, mod_loader: ModuleLoader, module_path: str):
         full = file_find(file, module_path)
         if not full:
             return False
         with open(full) as f:
-            return self.load(f, file, loaded_modules, module_path)
+            return self.load(f, file, mod_loader, module_path)
 
 
-def load_module(name: str, loaded_modules: ModuleLoader, module_path: str):
+def load_module(name: str, mod_loader: ModuleLoader, module_path: str):
     mod = name_lookup(name)
     if mod is False:
-        if loaded_modules.get(name) is None:
+        if mod_loader.get(name) is None:
             mod = Module()
             name_stack.append({})
-            if not mod.load_from_file(name + ".tla", loaded_modules, module_path):
+            if not mod.load_from_file(name + ".tla", mod_loader, module_path):
                 logger.error(f"can't load {name}: fatal error file={sys.stderr}")
                 exit(1)
             name_stack.pop()
-            loaded_modules[name] = mod
+            mod_loader[name] = mod
         else:
-            mod = loaded_modules[name]
+            mod = mod_loader[name]
     return mod
 
 
@@ -436,12 +455,12 @@ class ModInst:
         self.module = module
         self.substitutions = substitutions
 
-    def compile(self, ast, loaded_modules: ModuleLoader, module_path: str):
+    def compile(self, ast, mod_loader: ModuleLoader, module_path: str):
         (t, a) = ast
         assert t == "GInstance"
         (t1, a1) = a[0]
         assert t1 == "Name"
-        self.module = load_module(a1.lexeme, loaded_modules, module_path)
+        self.module = load_module(a1.lexeme, mod_loader, module_path)
 
         (t2, a2) = a[1]
         assert t2 == "Optional"

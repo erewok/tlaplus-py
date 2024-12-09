@@ -12,9 +12,12 @@ from .utils import convert, FrozenDict, simplify, val_to_string
 
 # This is a dictionary of wrappers around Python functions
 # Maps module names to dictionaries of (operator name, Wrapper) pairs
-wrappers = {}
 signalset = set()
 waitset = set()
+TLCvars = {}
+IO_inputs = []
+IO_outputs = []
+IO_running = set()
 
 
 class Wrapper:
@@ -135,53 +138,6 @@ class OutfixWrapper(Wrapper):
         raise ValueError(f"Unknown operator {id}")
 
 
-wrappers["Core"] = {
-    "=>": InfixWrapper(),
-    "<=>": InfixWrapper(),
-    "\\equiv": InfixWrapper(),
-    # "/\\": InfixWrapper(),
-    # "\\/": InfixWrapper(),
-    "#": InfixWrapper(),
-    "/=": InfixWrapper(),
-    # "=": InfixWrapper(),
-    # "\\in": InfixWrapper(),
-    # "\\notin": InfixWrapper(),
-    "\\subset": InfixWrapper(),
-    "\\subseteq": InfixWrapper(),
-    "\\supset": InfixWrapper(),
-    "\\supseteq": InfixWrapper(),
-    "\\": InfixWrapper(),
-    "\\cap": InfixWrapper(),
-    "\\intersect": InfixWrapper(),
-    "\\cup": InfixWrapper(),
-    "\\union": InfixWrapper(),
-    "DOMAIN": OutfixWrapper(),
-    "~": OutfixWrapper(),
-    "\\lnot": OutfixWrapper(),
-    "\\neg": OutfixWrapper(),
-    "UNION": OutfixWrapper(),
-    "SUBSET": OutfixWrapper(),
-}
-
-wrappers["Naturals"] = {
-    "<": InfixWrapper(),
-    ">": InfixWrapper(),
-    ">=": InfixWrapper(),
-    "\\geq": InfixWrapper(),
-    "<=": InfixWrapper(),
-    "=<": InfixWrapper(),
-    "\\leq": InfixWrapper(),
-    "..": InfixWrapper(),
-    "+": InfixWrapper(),
-    "-": InfixWrapper(),
-    "*": InfixWrapper(),
-    "/": InfixWrapper(),
-    "\\div": InfixWrapper(),
-    "%": InfixWrapper(),
-    "^": InfixWrapper(),
-}
-
-
 class LenWrapper(Wrapper):
     def __str__(self):
         return "Sequences!Len(_)"
@@ -208,13 +164,6 @@ class AppendWrapper(Wrapper):
     def eval(self, id, args):
         assert len(args) == 2
         return simplify(tuple(list(args[0]) + [args[1]]))
-
-
-wrappers["Sequences"] = {
-    "Len": LenWrapper(),
-    "\\o": ConcatWrapper(),
-    "Append": AppendWrapper(),
-}
 
 
 class AssertWrapper(Wrapper):
@@ -276,9 +225,6 @@ class ToStringWrapper(Wrapper):
         return val_to_string(args[0])
 
 
-TLCvars = {}
-
-
 class TLCSetWrapper(Wrapper):
     def __str__(self):
         return "TLC!TLCSet(_, _)"
@@ -296,18 +242,6 @@ class TLCGetWrapper(Wrapper):
     def eval(self, id, args):
         assert len(args) == 1
         return TLCvars[args[0]]
-
-
-wrappers["TLC"] = {
-    "Assert": AssertWrapper(),
-    "JavaTime": JavaTimeWrapper(),
-    "Print": PrintWrapper(),
-    "PrintT": PrintTWrapper(),
-    "RandomElement": RandomElementWrapper(),
-    "TLCSet": TLCSetWrapper(),
-    "TLCGet": TLCGetWrapper(),
-    "ToString": ToStringWrapper(),
-}
 
 
 class JWaitWrapper(Wrapper):
@@ -333,11 +267,8 @@ class JSignalReturnWrapper(Wrapper):
         return args[1]
 
 
-wrappers["TLCExt"] = {"JWait": JWaitWrapper(), "JSignalReturn": JSignalReturnWrapper()}
-
-
 class NetReceiver(threading.Thread):
-    def __init__(self, src, mux, verbose: bool=False):
+    def __init__(self, src, mux, verbose: bool = False):
         threading.Thread.__init__(self)
         self.src = src
         self.mux = mux
@@ -398,11 +329,6 @@ class NetServer(threading.Thread):
         while True:
             client = skt.accept()
             NetReceiver(client, self.mux).start()
-
-
-IO_inputs = []
-IO_outputs = []
-IO_running = set()
 
 
 class Reader(threading.Thread):
@@ -474,8 +400,78 @@ class IOGetWrapper(Wrapper):
         raise ValueError(f"IOGet.eval({args[0]}, {args[1]}) failed")
 
 
-wrappers["IOUtils"] = {
-    "IOPut": IOPutWrapper(),
-    "IOWait": IOWaitWrapper(),
-    "IOGet": IOGetWrapper(),
-}
+def build_wrappers() -> dict:
+    wrappers = {}
+    wrappers["Core"] = {
+        "=>": InfixWrapper(),
+        "<=>": InfixWrapper(),
+        "\\equiv": InfixWrapper(),
+        # "/\\": InfixWrapper(),
+        # "\\/": InfixWrapper(),
+        "#": InfixWrapper(),
+        "/=": InfixWrapper(),
+        # "=": InfixWrapper(),
+        # "\\in": InfixWrapper(),
+        # "\\notin": InfixWrapper(),
+        "\\subset": InfixWrapper(),
+        "\\subseteq": InfixWrapper(),
+        "\\supset": InfixWrapper(),
+        "\\supseteq": InfixWrapper(),
+        "\\": InfixWrapper(),
+        "\\cap": InfixWrapper(),
+        "\\intersect": InfixWrapper(),
+        "\\cup": InfixWrapper(),
+        "\\union": InfixWrapper(),
+        "DOMAIN": OutfixWrapper(),
+        "~": OutfixWrapper(),
+        "\\lnot": OutfixWrapper(),
+        "\\neg": OutfixWrapper(),
+        "UNION": OutfixWrapper(),
+        "SUBSET": OutfixWrapper(),
+    }
+
+    wrappers["Naturals"] = {
+        "<": InfixWrapper(),
+        ">": InfixWrapper(),
+        ">=": InfixWrapper(),
+        "\\geq": InfixWrapper(),
+        "<=": InfixWrapper(),
+        "=<": InfixWrapper(),
+        "\\leq": InfixWrapper(),
+        "..": InfixWrapper(),
+        "+": InfixWrapper(),
+        "-": InfixWrapper(),
+        "*": InfixWrapper(),
+        "/": InfixWrapper(),
+        "\\div": InfixWrapper(),
+        "%": InfixWrapper(),
+        "^": InfixWrapper(),
+    }
+
+    wrappers["Sequences"] = {
+        "Len": LenWrapper(),
+        "\\o": ConcatWrapper(),
+        "Append": AppendWrapper(),
+    }
+
+    wrappers["TLC"] = {
+        "Assert": AssertWrapper(),
+        "JavaTime": JavaTimeWrapper(),
+        "Print": PrintWrapper(),
+        "PrintT": PrintTWrapper(),
+        "RandomElement": RandomElementWrapper(),
+        "TLCSet": TLCSetWrapper(),
+        "TLCGet": TLCGetWrapper(),
+        "ToString": ToStringWrapper(),
+    }
+    wrappers["TLCExt"] = {
+        "JWait": JWaitWrapper(),
+        "JSignalReturn": JSignalReturnWrapper(),
+    }
+
+    wrappers["IOUtils"] = {
+        "IOPut": IOPutWrapper(),
+        "IOWait": IOWaitWrapper(),
+        "IOGet": IOGetWrapper(),
+    }
+    return wrappers
