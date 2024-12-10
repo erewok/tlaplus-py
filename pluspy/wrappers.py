@@ -3,7 +3,9 @@ import random
 import socket
 import threading
 import time
+from abc import ABC, abstractmethod
 
+from .lexer import InfixTokenKind
 from .utils import convert, FrozenDict, simplify, val_to_string
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
@@ -20,82 +22,88 @@ IO_outputs = []
 IO_running = set()
 
 
-class Wrapper:
-    def eval(self, id, args):
+class Wrapper(ABC):
+    @abstractmethod
+    def __call__(self, ident, args):
         raise NotImplementedError("eval not implemeted for base class")
 
 
 class InfixWrapper(Wrapper):
     def __str__(self):
-        return "Naturals!InfixWrapper()"
+        return "Core!InfixWrapper()"
 
-    def eval(self, id, args):
-        assert len(args) == 2
+    def __call__(self, ident, args):
+        """Evaluate an infix operator into a Python value."""
+        assert len(args) == 2, "Infix must have left-hand and right-hand args"
         lhs = args[0]
         rhs = args[1]
-        if id[0] == "\\":
-            if id == "\\/":
+        match ident:
+            case InfixTokenKind.And.lexeme:
                 return lhs or rhs
-            if id == "\\equiv":
+            case InfixTokenKind.Equivalent.lexeme:
                 return lhs == rhs
-            if id == "\\geq":
+            case InfixTokenKind.GreaterEqual.lexeme:
                 return lhs >= rhs
-            if id == "\\in":
+            case InfixTokenKind.In.lexeme:
                 return lhs in rhs
-            if id == "\\notin":
+            case InfixTokenKind.NotIn.lexeme:
                 return lhs not in rhs
-            if id == "\\leq":
+            case InfixTokenKind.LessEqual.lexeme:
                 return lhs <= rhs
-            if id == "\\subset":
+            case InfixTokenKind.Subset.lexeme:
                 return lhs.issubset(rhs) and lhs != rhs
-            if id == "\\subseteq":
+            case InfixTokenKind.SubsetEqual.lexeme:
                 return lhs.issubset(rhs)
-            if id == "\\supset":
+            case InfixTokenKind.Superset.lexeme:
                 return rhs.issubset(lhs) and rhs != lhs
-            if id == "\\supseteq":
+            case InfixTokenKind.SupersetEqual.lexeme:
                 return rhs.issubset(lhs)
-            if id == "\\":
+            case InfixTokenKind.Backslash.lexeme:
                 return lhs.difference(rhs)
-            if id in {"\\cap", "\\intersect"}:
+            case InfixTokenKind.Cap.lexeme | InfixTokenKind.Intersect.lexeme:
                 return lhs.intersection(rhs)
-            if id in {"\\cup", "\\union"}:
+            case InfixTokenKind.Cup.lexeme | InfixTokenKind.Union.lexeme:
                 return lhs.union(rhs)
-            if id == "\\div":
+            case InfixTokenKind.Divide.lexeme:
                 return lhs // rhs
-        else:
-            if id == "/\\":
+            case InfixTokenKind.And.lexeme:
                 return lhs and rhs
-            if id == "=>":
+            case InfixTokenKind.RightImplies.lexeme:
                 return (not lhs) or rhs
-            if id == "<=>":
-                return lhs == rhs
-            if id in {"#", "/="}:
+            case InfixTokenKind.LeftImplies.lexeme:
+                return (not rhs) or lhs
+            case InfixTokenKind.MutualImplies.lexeme:
+                # The value of the expression A <=> B is defined for A \in BOOLEAN /\ B \in BOOLEAN.
+                # For non-Boolean values of A and B, the meaning of the operator <=> is unspecified by TLA+.
+                return (lhs == rhs) and (lhs in {True, False})
+            case InfixTokenKind.Hash.lexeme | InfixTokenKind.NotEqual.lexeme:
                 return lhs != rhs
-            if id == "<":
+            case InfixTokenKind.LessThan.lexeme:
                 return lhs < rhs
-            if id == "=":
+            case InfixTokenKind.Equal.lexeme:
                 return lhs == rhs
-            if id == ">":
+            case InfixTokenKind.GreaterThan.lexeme:
                 return lhs > rhs
-            if id == ">=":
+            case InfixTokenKind.GreaterThanEqual.lexeme:
                 return lhs >= rhs
-            if id in {"<=", "=<"}:
+            case InfixTokenKind.LessThanEqual.lexeme:
                 return lhs <= rhs
-            if id == "..":
+            case InfixTokenKind.DotDot.lexeme:
                 return frozenset({i for i in range(lhs, rhs + 1)})
-            if id == "+":
+            case InfixTokenKind.Plus.lexeme:
                 return lhs + rhs
-            if id == "-":
+            case InfixTokenKind.Minus.lexeme:
                 return lhs - rhs
-            if id == "*":
+            case InfixTokenKind.Star.lexeme:
                 return lhs * rhs
-            if id == "/":
+            case InfixTokenKind.Slash.lexeme:
                 return lhs / rhs
-            if id == "%":
+            case InfixTokenKind.Percent.lexeme:
                 return lhs % rhs
-            if id == "^":
+            case InfixTokenKind.Caret.lexeme:
                 return lhs**rhs
-        raise ValueError(f"Unknown operator {id}")
+            case _:
+                raise ValueError(f"Unknown operator {ident}")
 
 
 class OutfixWrapper(Wrapper):
@@ -109,30 +117,30 @@ class OutfixWrapper(Wrapper):
             self.subset_enum(lst[1:], record, result)
             self.subset_enum(lst[1:], record.union({lst[0]}), result)
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         expr = args[0]
 
-        if id == "DOMAIN":
+        if ident == "DOMAIN":
             if isinstance(expr, str) or isinstance(expr, tuple):
                 return frozenset(range(1, len(expr) + 1))
             else:
                 assert isinstance(expr, FrozenDict)
                 return frozenset(expr.d.keys())
 
-        if id == "UNION":
+        if ident == "UNION":
             result = set()
             for x in expr:
                 result = result.union(x)
             return frozenset(result)
 
-        if id == "SUBSET":
+        if ident == "SUBSET":
             result = set()
             self.subset_enum(list(expr), set(), result)
             return frozenset(result)
 
-        # if id == "-.": return -expr
-        if id in {"~", "\\lnot", "\\neg"}:
+        # if ident == "-.": return -expr
+        if ident in {"~", "\\lnot", "\\neg"}:
             return not expr
 
         raise ValueError(f"Unknown operator {id}")
@@ -142,7 +150,7 @@ class LenWrapper(Wrapper):
     def __str__(self):
         return "Sequences!Len(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         assert isinstance(args[0], tuple) or isinstance(args[0], str)
         return len(args[0])
@@ -152,7 +160,7 @@ class ConcatWrapper(Wrapper):
     def __str__(self):
         return "Sequences!Concat(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         return simplify(tuple(list(args[0]) + list(args[1])))
 
@@ -161,7 +169,7 @@ class AppendWrapper(Wrapper):
     def __str__(self):
         return "Sequences!Append(_)"
 
-    def eval(self, id, args):
+    def __call__(self, _ident, args):
         assert len(args) == 2
         return simplify(tuple(list(args[0]) + [args[1]]))
 
@@ -170,7 +178,7 @@ class AssertWrapper(Wrapper):
     def __str__(self):
         return "TLC!Assert(_, _)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         assert args[0], args[1]
         return True
@@ -180,7 +188,7 @@ class JavaTimeWrapper(Wrapper):
     def __str__(self):
         return "TLC!JavaTime()"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 0
         return int(time.time() * 1000)
 
@@ -189,7 +197,7 @@ class PrintWrapper(Wrapper):
     def __str__(self):
         return "TLC!Print(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         print(str(convert(args[0])), end="")
         return args[1]
@@ -199,7 +207,7 @@ class PrintTWrapper(Wrapper):
     def __str__(self):
         return "TLC!TPrint(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         print(str(convert(args[0])))
         return True
@@ -209,7 +217,7 @@ class RandomElementWrapper(Wrapper):
     def __str__(self):
         return "TLC!RandomElement(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         lst = list(args[0])
         r = random.randrange(len(lst))
@@ -220,7 +228,7 @@ class ToStringWrapper(Wrapper):
     def __str__(self):
         return "TLC!ToString(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         return val_to_string(args[0])
 
@@ -229,7 +237,7 @@ class TLCSetWrapper(Wrapper):
     def __str__(self):
         return "TLC!TLCSet(_, _)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         TLCvars[args[0]] = args[1]
         return True
@@ -239,7 +247,7 @@ class TLCGetWrapper(Wrapper):
     def __str__(self):
         return "TLC!TLCGet(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         return TLCvars[args[0]]
 
@@ -248,7 +256,7 @@ class JWaitWrapper(Wrapper):
     def __str__(self):
         return "TLC!JWait(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 1
         global waitset
         assert args[0] not in waitset
@@ -260,7 +268,7 @@ class JSignalReturnWrapper(Wrapper):
     def __str__(self):
         return "TLC!JSignalReturn(_,_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         global signalset
         signalset.add(args[0])
@@ -348,7 +356,7 @@ class IOPutWrapper(Wrapper):
     def __str__(self):
         return "IOUtils!IOPut(_)"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 3
         IO_outputs.append(
             FrozenDict({"intf": args[0], "mux": args[1], "data": args[2]})
@@ -360,7 +368,7 @@ class IOWaitWrapper(Wrapper):
     def __str__(self):
         return "IOUtils!IOWait(Pattern(_))"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         global IO_running
 
         assert len(args) == 2
@@ -389,7 +397,7 @@ class IOGetWrapper(Wrapper):
     def __str__(self):
         return "IOUtils!IOGet(Pattern(_))"
 
-    def eval(self, id, args):
+    def __call__(self, ident, args):
         assert len(args) == 2
         for x in IO_inputs:
             assert isinstance(x, FrozenDict)
@@ -401,59 +409,68 @@ class IOGetWrapper(Wrapper):
 
 
 def build_wrappers() -> dict:
+    # Eventually we can turn these into functions
+    # For now, singletons are fine, instead of what the code
+    # did previously: create a new instance of each wrapper for every operator.
+    infix_inst = InfixWrapper()
+    outfix_inst = OutfixWrapper()
+    len_inst = LenWrapper()
+    concat_inst = ConcatWrapper()
+    append_inst = AppendWrapper()
+
     wrappers = {}
     wrappers["Core"] = {
-        "=>": InfixWrapper(),
-        "<=>": InfixWrapper(),
-        "\\equiv": InfixWrapper(),
-        # "/\\": InfixWrapper(),
-        # "\\/": InfixWrapper(),
-        "#": InfixWrapper(),
-        "/=": InfixWrapper(),
-        # "=": InfixWrapper(),
-        # "\\in": InfixWrapper(),
-        # "\\notin": InfixWrapper(),
-        "\\subset": InfixWrapper(),
-        "\\subseteq": InfixWrapper(),
-        "\\supset": InfixWrapper(),
-        "\\supseteq": InfixWrapper(),
-        "\\": InfixWrapper(),
-        "\\cap": InfixWrapper(),
-        "\\intersect": InfixWrapper(),
-        "\\cup": InfixWrapper(),
-        "\\union": InfixWrapper(),
-        "DOMAIN": OutfixWrapper(),
-        "~": OutfixWrapper(),
-        "\\lnot": OutfixWrapper(),
-        "\\neg": OutfixWrapper(),
-        "UNION": OutfixWrapper(),
-        "SUBSET": OutfixWrapper(),
+        "=>": infix_inst,
+        "<=>": infix_inst,
+        "\\equiv": infix_inst,
+        # "/\\": infix_inst,
+        # "\\/": infix_inst,
+        "#": infix_inst,
+        "/=": infix_inst,
+        # "=": infix_inst,
+        # "\\in": infix_inst,
+        # "\\notin": infix_inst,
+        "\\subset": infix_inst,
+        "\\subseteq": infix_inst,
+        "\\supset": infix_inst,
+        "\\supseteq": infix_inst,
+        "\\": infix_inst,
+        "\\cap": infix_inst,
+        "\\intersect": infix_inst,
+        "\\cup": infix_inst,
+        "\\union": infix_inst,
+        "DOMAIN": outfix_inst,
+        "~": outfix_inst,
+        "\\lnot": outfix_inst,
+        "\\neg": outfix_inst,
+        "UNION": outfix_inst,
+        "SUBSET": outfix_inst,
     }
 
     wrappers["Naturals"] = {
-        "<": InfixWrapper(),
-        ">": InfixWrapper(),
-        ">=": InfixWrapper(),
-        "\\geq": InfixWrapper(),
-        "<=": InfixWrapper(),
-        "=<": InfixWrapper(),
-        "\\leq": InfixWrapper(),
-        "..": InfixWrapper(),
-        "+": InfixWrapper(),
-        "-": InfixWrapper(),
-        "*": InfixWrapper(),
-        "/": InfixWrapper(),
-        "\\div": InfixWrapper(),
-        "%": InfixWrapper(),
-        "^": InfixWrapper(),
+        "<": infix_inst,
+        ">": infix_inst,
+        ">=": infix_inst,
+        "\\geq": infix_inst,
+        "<=": infix_inst,
+        "=<": infix_inst,
+        "\\leq": infix_inst,
+        "..": infix_inst,
+        "+": infix_inst,
+        "-": infix_inst,
+        "*": infix_inst,
+        "/": infix_inst,
+        "\\div": infix_inst,
+        "%": infix_inst,
+        "^": infix_inst,
     }
 
     wrappers["Sequences"] = {
-        "Len": LenWrapper(),
-        "\\o": ConcatWrapper(),
-        "Append": AppendWrapper(),
+        "Len": len_inst,
+        "\\o": concat_inst,
+        "Append": append_inst,
     }
-
+    # These are only instantiated once, so we can use the same instance
     wrappers["TLC"] = {
         "Assert": AssertWrapper(),
         "JavaTime": JavaTimeWrapper(),

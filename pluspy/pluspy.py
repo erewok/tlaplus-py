@@ -36,7 +36,7 @@ class PlusPyError(Exception):
 class PlusPy:
     def __init__(
         self,
-        file: str,
+        filename: str,
         constants: dict | None = None,
         module_loader: ModuleLoader | None = None,
         seed=None,
@@ -50,10 +50,11 @@ class PlusPy:
         self.module_path = module_path
         # Load the module
         self.mod = Module()
-        if not file.endswith(".tla"):
-            file += ".tla"
-        if not self.mod.load_from_file(file, self.mod_loader, self.module_path):
-            raise PlusPyError("can't load " + file)
+        if not filename.endswith(".tla"):
+            filename += ".tla"
+        result = self.mod.load_from_file(filename, self.mod_loader, self.module_path)
+        if not result:
+            raise PlusPyError("can't load " + filename)
 
         # Now that it has a name, we add it to the ModuleLoader
         self.mod_loader[self.mod.name] = self.mod

@@ -4,14 +4,18 @@ import random
 import sys
 import threading
 import traceback
-from typing import Optional
+from typing import NewType, Optional
 
 from . import wrappers
-from .lexer import InfixOps, lexer, PostfixOps, PrefixOps, Token
+from .lexer import InfixTokenKind, lexer, PostfixTokenKind, PrefixTokenKind, Token
 from .utils import convert, FrozenDict, isletter, isnamechar, isnumeral, key, Nonce, val_to_string
 from .wrappers import Wrapper
 
 logger = logging.getLogger(__name__)
+
+PrefixOp = NewType("PrefixOp", None)
+PostfixOp = NewType("PostfixOp", None)
+InfixOp = NewType("InfixOp", None)
 
 
 def exit(status):
@@ -229,19 +233,19 @@ class Module:
             assert tloc == "Optional"
             (t1, a1) = a[1]
             assert t1 == "GOperatorDefinition"
-            (id, args, expr) = compile_operator_definition(a1)
-            if id in self.wrappers.keys():
+            (ident, args, expr) = compile_operator_definition(a1)
+            if ident in self.wrappers.keys():
                 od = OperatorExpression(
-                    id, args, BuiltinExpression(id, args, self.wrappers[id])
+                    ident, args, BuiltinExpression(ident, args, self.wrappers[ident])
                 )
             else:
-                od = OperatorExpression(id, args, expr)
-            self.operators[id] = od
+                od = OperatorExpression(ident, args, expr)
+            self.operators[ident] = od
             if aloc is None:
-                self.globals.add(id)
-            name_stack[-1][id] = od.expr if args == [] else od
+                self.globals.add(ident)
+            name_stack[-1][ident] = od.expr if args == [] else od
             if verbose:
-                logger.info(f"+-> {id=}, {args=}, {expr.primed=}\n\t{expr=}")
+                logger.info(f"+-> {ident=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-inst":
             (tloc, aloc) = a[0]
             assert tloc == "Optional"
@@ -640,15 +644,16 @@ shortest = []
 error = []
 
 
-def parse_error(a, r: Token):
+def parse_error(a, rem: list[Token]):
     global shortest, error
-    if len(r) < len(shortest):
+    # logger.error(f"Parse error: {a} for {str(rem)}")
+    if len(rem) < len(shortest):
         error = a
-        shortest = r
-    return (False, a, r)
+        shortest = rem
+    return (False, a, rem)
 
 
-def match(name, s, rule, select=None):
+def rule_match(name, found_tokens: list[Token], rule, select=None):
     """
     Handy routine for rules that simply call other rules
     It parses s using the given rule and returns a node (name, (t, a), r)
@@ -667,7 +672,7 @@ def match(name, s, rule, select=None):
     :param select: subset of rules to select
     :return: AST node with selected rules
     """
-    (t, a, r) = rule.parse(s)
+    (t, a, r) = rule.parse(found_tokens)
     if not t:
         return parse_error([name] + a, r)
     if isinstance(select, list) and t == "Concat":
@@ -686,15 +691,15 @@ class Rule:
     #   a: contents of the AST node (or error message if t = False)
     #   r: remainder of 's' that was not parsed
     # Must be redefined in child class
-    def parse(self, s):
-        return parse_error(["Rule.parse undefined"], s)
+    def parse(self, found_tokens: list[Token]):
+        return parse_error(["Rule.parse undefined"], found_tokens)
 
 
 class GModule(Rule):
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "GModule",
-            s,
+            found_tokens,
             Concat(
                 [
                     tok("----"),
@@ -715,8 +720,8 @@ class Concat(Rule):
     def __init__(self, what):
         self.what = what
 
-    def parse(self, s):
-        rem = s
+    def parse(self, found_tokens):
+        rem = found_tokens
         result = []
         for x in self.what:
             (t, a, r) = x.parse(rem)
@@ -750,16 +755,16 @@ class AtLeast(Rule):
 
 
 # Recognizes an optional rule, i.e., 'rule?'
-# 'select' can be used similarly as in Rule.match()
+# 'select' can be used similarly as in Rule.rule_match()
 class Optional(Rule):
     def __init__(self, rule, select=None):
         self.rule = rule
         self.select = select
 
-    def parse(self, s):
-        (t, a, r) = self.rule.parse(s)
+    def parse(self, found_tokens):
+        (t, a, r) = self.rule.parse(found_tokens)
         if not t:
-            return ("Optional", None, s)
+            return ("Optional", None, found_tokens)
         elif t == "Concat" and isinstance(self.select, list):
             if len(self.select) == 1:
                 return ("Optional", a[self.select[0]], r)
@@ -772,63 +777,63 @@ class tok(Rule):  # noqa: N801
     def __init__(self, what):
         self.what = what
 
-    def parse(self, s):
-        if s == []:
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
             return parse_error(["tok: no more tokens"], s)
-        if s[0].lexeme == self.what:
-            return ("tok", s[0], s[1:])
+        if found_tokens[0].lexeme == self.what:
+            return ("tok", found_tokens[0], found_tokens[1:])
         return parse_error(
-            [(f"tok: no match with '{self.what}' {s[0]}", str(s[0]))], s
+            [(f"tok: no match for '{found_tokens[0].lexeme}' {found_tokens[0]}", str(found_tokens[0]))], found_tokens
         )
 
 
 class Tok(Rule):
-    def __init__(self, what, name):
+    def __init__(self, what: set[str], name: str):
         self.what = what
         self.name = name
 
-    def parse(self, s):
-        if s == []:
-            return parse_error(["Tok: no more tokens"], s)
-        if s[0].lexeme in self.what:
-            return ("Tok", s[0], s[1:])
-        return parse_error(["Tok: no match with " + self.name], s)
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
+            return parse_error(["Tok: no more tokens"], found_tokens)
+        if found_tokens[0].lexeme in self.what:
+            return ("Tok", found_tokens[0], found_tokens[1:])
+        return parse_error(["Tok: no match with " + self.name], found_tokens)
 
 
 class Name(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s: list[Token]):
-        if s == []:
-            return parse_error(["Name"], s)
-        lex = s[0].lexeme
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
+            return parse_error(["Name"], found_tokens)
+        lex = found_tokens[0].lexeme
         if lex.startswith("WF_"):
-            return parse_error([("Name WF_", s[0])], s)
+            return parse_error([("Name WF_", found_tokens[0])], found_tokens)
         if lex.startswith("SF_"):
-            return parse_error([("Name SF_", s[0])], s)
+            return parse_error([("Name SF_", found_tokens[0])], found_tokens)
         hasletter = False
-        for c in lex:
-            if not isnamechar(c):
-                return parse_error([("Name with bad character", s[0])], s)
-            if isletter(c):
+        for char in lex:
+            if not isnamechar(char):
+                return parse_error([("Name with bad character", found_tokens[0])], found_tokens)
+            if isletter(char):
                 hasletter = True
         if hasletter:
-            return ("Name", s[0], s[1:])
-        return parse_error([("Name with no letter", s[0])], s)
+            return ("Name", found_tokens[0], found_tokens[1:])
+        return parse_error([("Name with no letter", found_tokens[0])], found_tokens)
 
 
 class Identifier(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s):
-        (t, a, r) = Name().parse(s)
+    def parse(self, found_tokens: list[Token]):
+        (t, a, r) = Name().parse(found_tokens)
         if t != "Name":
-            return parse_error(["Identifier: not a Name"] + a, s)
+            return parse_error(["Identifier: not a Name"] + a, found_tokens)
         lex = a.lexeme
         if lex in ReservedWords:
-            return parse_error([("Identifier: Name Reserved", a)], s)
+            return parse_error([("Identifier: Name Reserved", a)], found_tokens)
         return ("Identifier", a, r)
 
 
@@ -840,35 +845,35 @@ class Tag(Rule):
         self.rule = rule
         self.select = select
 
-    def parse(self, s):
-        return match(self.name, s, self.rule, self.select)
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(self.name, found_tokens, self.rule, self.select)
 
 
 class Number(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s: Token):
-        if s == []:
-            return parse_error(["Number"], s)
-        lex = s[0].lexeme
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
+            return parse_error(["Number"], found_tokens)
+        lex = found_tokens[0].lexeme
         for c in lex:
             if not isnumeral(c):
-                return parse_error([("Number", s[0])], s)
-        return ("Number", lex, s[1:])
+                return parse_error([("Number", found_tokens[0])], found_tokens)
+        return ("Number", lex, found_tokens[1:])
 
 
 class String(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s: Token):
-        if s == []:
-            return parse_error(["String"], s)
-        lex = s[0].lexeme
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
+            return parse_error(["String"], found_tokens)
+        lex = found_tokens[0].lexeme
         if lex[0] == '"' and lex[-1] == '"':
-            return ("String", lex, s[1:])
-        return parse_error([("String", s[0])], s)
+            return ("String", lex, found_tokens[1:])
+        return parse_error([("String", found_tokens[0])], found_tokens)
 
 
 class SeparatorList(Rule):
@@ -877,11 +882,11 @@ class SeparatorList(Rule):
         self.sep = sep  # separator token
         self.optional = optional  # empty list allowed
 
-    def parse(self, s: Token):
-        (t, a, r) = self.what.parse(s)
+    def parse(self, found_tokens: list[Token]):
+        (t, a, r) = self.what.parse(found_tokens)
         if not t:
             return (
-                ("SeparatorList", [], s)
+                ("SeparatorList", [], found_tokens)
                 if self.optional
                 else (False, ["SeparatorList"] + a, r)
             )
@@ -901,8 +906,8 @@ class CommaList(Rule):
     def __init__(self, what):
         self.what = what
 
-    def parse(self, s):
-        (t, a, r) = self.what.parse(s)
+    def parse(self, found_tokens: list[Token]):
+        (t, a, r) = self.what.parse(found_tokens)
         if not t:
             return parse_error(["CommaList"] + a, r)
         rem = r
@@ -921,17 +926,17 @@ class OneOf(Rule):
     def __init__(self, what):
         self.what = what
 
-    def parse(self, s):
-        shortest = s  # look for shortest remainder
+    def parse(self, found_tokens: list[Token]):
+        shortest = found_tokens  # look for shortest remainder
         result = None
         for grammar in self.what:
-            (t, a, r) = grammar.parse(s)
+            (t, a, r) = grammar.parse(found_tokens)
             if t is not False:
                 if len(r) < len(shortest):
                     shortest = r
                     result = (t, a, r)
         if result is None:
-            return parse_error([("OneOf: no match", s)], s)
+            return parse_error([("OneOf: no match", found_tokens)], found_tokens)
         return result
 
 
@@ -939,10 +944,10 @@ class Tuple(Rule):
     def __init__(self):
         pass
 
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "Tuple",
-            s,
+            found_tokens,
             Concat(
                 [
                     tok("<<"),
@@ -959,10 +964,10 @@ class GUnit(Rule):
     def local(self, tag, decl):
         return Tag(tag, Concat([Optional(tok("LOCAL")), decl]), [0, 1])
 
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "GUnit",
-            s,
+            found_tokens,
             OneOf(
                 [
                     GVariableDeclaration(),
@@ -982,15 +987,15 @@ class GUnit(Rule):
 
 
 class GDivider(Rule):
-    def parse(self, s):
-        return match("GDivider", s, tok("----"))
+    def parse(self, found_tokens: list[Token]):
+        return rule_match("GDivider", found_tokens, tok("----"))
 
 
 class GVariableDeclaration(Rule):
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "GVariableDeclaration",
-            s,
+            found_tokens,
             Concat(
                 [OneOf([tok("VARIABLE"), tok("VARIABLES")]), CommaList(Identifier())]
             ),
@@ -999,20 +1004,20 @@ class GVariableDeclaration(Rule):
 
 
 class GConstantDeclaration(Rule):
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "GConstantDeclaration",
-            s,
+            found_tokens,
             Concat([OneOf([tok("CONSTANT"), tok("CONSTANTS")]), CommaList(GOpDecl())]),
             [1],
         )
 
 
 class GOpDecl(Rule):
-    def parse(self, s):
-        return match(
+    def parse(self, found_tokens: list[Token]):
+        return rule_match(
             "GOpDecl",
-            s,
+            found_tokens,
             OneOf(
                 [
                     Identifier(),
@@ -1023,17 +1028,17 @@ class GOpDecl(Rule):
                     ),
                     Tag(
                         "prefixOp",
-                        Concat([Tok(PrefixOps, "prefix operator"), tok("_")]),
+                        Concat([Tok(PrefixTokenKind.token_set(), "prefix operator"), tok("_")]),
                         [0],
                     ),
                     Tag(
                         "infixOp",
-                        Concat([tok("_"), Tok(InfixOps, "infix operator"), tok("_")]),
+                        Concat([tok("_"), Tok(InfixTokenKind.token_set(), "infix operator"), tok("_")]),
                         [1],
                     ),
                     Tag(
                         "postfixOp",
-                        Concat([tok("_"), Tok(PostfixOps, "postfix operator")]),
+                        Concat([tok("_"), Tok(PostfixTokenKind.token_set(), "postfix operator")]),
                         [1],
                     ),
                 ]
@@ -1043,7 +1048,7 @@ class GOpDecl(Rule):
 
 class GNonFixLHS(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GNonFixLHS",
             s,
             Concat(
@@ -1058,7 +1063,7 @@ class GNonFixLHS(Rule):
 
 class GFunctionDefinition(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GFunctionDefinition",
             s,
             Concat(
@@ -1077,7 +1082,7 @@ class GFunctionDefinition(Rule):
 
 class GOperatorDefinition(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GOperatorDefinition",
             s,
             Concat(
@@ -1088,7 +1093,7 @@ class GOperatorDefinition(Rule):
                             Tag(
                                 "prefix",
                                 Concat(
-                                    [Tok(PrefixOps, "prefix operator"), Identifier()]
+                                    [Tok(PrefixTokenKind.token_set(), "prefix operator"), Identifier()]
                                 ),
                             ),
                             Tag(
@@ -1096,7 +1101,7 @@ class GOperatorDefinition(Rule):
                                 Concat(
                                     [
                                         Identifier(),
-                                        Tok(InfixOps, "infix operator"),
+                                        Tok(InfixTokenKind.token_set(), "infix operator"),
                                         Identifier(),
                                     ]
                                 ),
@@ -1104,7 +1109,7 @@ class GOperatorDefinition(Rule):
                             Tag(
                                 "postfix",
                                 Concat(
-                                    [Identifier(), Tok(PostfixOps, "postfix operator")]
+                                    [Identifier(), Tok(PostfixTokenKind.token_set(), "postfix operator")]
                                 ),
                             ),
                         ]
@@ -1119,12 +1124,12 @@ class GOperatorDefinition(Rule):
 
 class GTheorem(Rule):
     def parse(self, s):
-        return match("GTheorem", s, Concat([tok("THEOREM"), GExpression(0)]), [1])
+        return rule_match("GTheorem", s, Concat([tok("THEOREM"), GExpression(0)]), [1])
 
 
 class GAssumption(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GAssumption",
             s,
             Concat(
@@ -1140,7 +1145,7 @@ class GAssumption(Rule):
 
 class IdentifierOrTuple(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "IdentifierOrTuple",
             s,
             OneOf(
@@ -1159,7 +1164,7 @@ class IdentifierOrTuple(Rule):
 
 class GQuantifierBound(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GQuantifierBound",
             s,
             Concat(
@@ -1171,7 +1176,7 @@ class GQuantifierBound(Rule):
 
 class GInstance(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GInstance",
             s,
             Concat(
@@ -1187,7 +1192,7 @@ class GInstance(Rule):
 
 class GSubstitution(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GSubstitution",
             s,
             Concat(
@@ -1204,7 +1209,7 @@ class GSubstitution(Rule):
 
 class GArgument(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GArgument",
             s,
             OneOf(
@@ -1220,7 +1225,7 @@ class GArgument(Rule):
 
 class GInstancePrefix(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GInstancePrefix",
             s,
             AtLeast(
@@ -1248,39 +1253,39 @@ class GInstancePrefix(Rule):
 
 class GGeneralIdentifier(Rule):
     def parse(self, s):
-        return match("GGeneralIdentifier", s, Concat([GInstancePrefix(), Identifier()]))
+        return rule_match("GGeneralIdentifier", s, Concat([GInstancePrefix(), Identifier()]))
 
 
 class GGeneralPrefixOp(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GGeneralPrefixOp",
             s,
-            Concat([GInstancePrefix(), Tok(PrefixOps, "prefix operator")]),
+            Concat([GInstancePrefix(), Tok(PrefixTokenKind.token_set(), "prefix operator")]),
         )
 
 
 class GGeneralInfixOp(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GGeneralInfixOp",
             s,
-            Concat([GInstancePrefix(), Tok(InfixOps, "infix operator")]),
+            Concat([GInstancePrefix(), Tok(InfixTokenKind.token_set(), "infix operator")]),
         )
 
 
 class GGeneralPostfixOp(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GGeneralPostfixOp",
             s,
-            Concat([GInstancePrefix(), Tok(PostfixOps, "postfix operator")]),
+            Concat([GInstancePrefix(), Tok(PostfixTokenKind.token_set(), "postfix operator")]),
         )
 
 
 class GModuleDefinition(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GModuleDefinition",
             s,
             Concat([GNonFixLHS(), tok("=="), GInstance()]),
@@ -1290,15 +1295,8 @@ class GModuleDefinition(Rule):
 
 # a disjunct or conjunct token is identifier by all but the line in the token
 def junct(token):
-    (lex, line, column, first) = token
+    (lex, _line, column, first) = token
     return (lex, column, first)
-
-
-# we use the average of the precedence range of an operator to determine
-# its precedence.  We don't care about checking for conflicts...
-def precedence(range):
-    (lo, hi) = range
-    return (lo + hi) // 2
 
 
 class GExpression(Rule):
@@ -1311,7 +1309,7 @@ class GExpression(Rule):
 
         # If at the top precedence level, get a basic expression.
         if self.level == 18:
-            return match("GExpression18", s, GBasicExpression(), True)
+            return rule_match("GExpression18", s, GBasicExpression(), True)
 
         # See if this is an expression starting with /\ or \/
         lex = s[0].lexeme
@@ -1336,10 +1334,10 @@ class GExpression(Rule):
 
         # See if the expression starts with a prefix operator.
         # TODO.  Should match again GGeneralPrefixOp
-        x = PrefixOps.get(s[0].lexeme)
-        if x is not None:
+        token_kind = PrefixTokenKind.get(s[0].lexeme)
+        if token_kind is not None:
             # Compute the precedence level of the operator.
-            prec = precedence(x)
+            prec = token_kind.precedence()
 
             # Parse an expression of the given precedence level.
             (t, a, r) = GExpression(prec).parse(s[1:])
@@ -1364,10 +1362,10 @@ class GExpression(Rule):
                 return (t, a, r)
 
             # See if it's a postfix expression with sufficient precedence
-            x = PostfixOps.get(r[0].lexeme)
-            if x is not None:
+            token_kind = PostfixTokenKind.get(r[0].lexeme)
+            if token_kind is not None:
                 # Compute the precedence level.  If of a lower level, we're done.
-                prec = precedence(x)
+                prec = token_kind.precedence()
                 if prec <= self.level:
                     return (t, a, r)
 
@@ -1389,8 +1387,8 @@ class GExpression(Rule):
             else:
                 # See if the next token is an infix operator.  If not, we're done.
                 lex = r[0].lexeme
-                x = InfixOps.get(lex)
-                if x is None:
+                token_kind = InfixTokenKind.get(lex)
+                if token_kind is None:
                     return (t, a, r)
 
                 # If it's the '.' operator, it should be followed by a field name
@@ -1415,7 +1413,7 @@ class GExpression(Rule):
 
                 else:
                     # Compute the precedence.  If too low, we're done.
-                    prec = precedence(x)
+                    prec = token_kind.precedence()
                     if prec <= self.level:
                         return (t, a, r)
 
@@ -1489,7 +1487,7 @@ class GExcept(Rule):
 
 class GBasicExpression(Rule):
     def parse(self, s):
-        return match(
+        return rule_match(
             "GBasicExpression",
             s,
             OneOf(
@@ -1855,7 +1853,7 @@ def op_subst(instances):
 
 # This is an expression of the form A!B(b)!C, say
 def compile_op_expression(od):
-    primed = False
+    _primed = False
 
     # print("COE", od)
     (t0, a0) = od[0]
@@ -2210,7 +2208,7 @@ class BuiltinExpression(Expression):
         # print("BI eval", self)
         args = [arg.eval(containers, boundedvars) for arg in self.args]
         try:
-            return self.wrapper.eval(self.id, args)
+            return self.wrapper(self.id, args)
         except Exception as e:
             print("Evaluating", str(self.lex), "failed")
             print(e)
