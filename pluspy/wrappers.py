@@ -5,23 +5,13 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
+from . import run_global_vars
 from .lexer import InfixTokenKind
 from .utils import convert, FrozenDict, simplify, val_to_string
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Python Wrappers (to replace TLA+ operator definitions)
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-
-# This is a dictionary of wrappers around Python functions
-# Maps module names to dictionaries of (operator name, Wrapper) pairs
-signalset = set()
-waitset = set()
-TLCvars = {}
-IO_inputs = []
-IO_outputs = []
-IO_running = set()
-
-
 class Wrapper(ABC):
     @abstractmethod
     def __call__(self, ident, args):
@@ -239,7 +229,7 @@ class TLCSetWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 2
-        TLCvars[args[0]] = args[1]
+        run_global_vars.TLCvars[args[0]] = args[1]
         return True
 
 
@@ -249,7 +239,7 @@ class TLCGetWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 1
-        return TLCvars[args[0]]
+        return run_global_vars.TLCvars[args[0]]
 
 
 class JWaitWrapper(Wrapper):
@@ -258,9 +248,8 @@ class JWaitWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 1
-        global waitset
-        assert args[0] not in waitset
-        waitset.add(args[0])
+        assert args[0] not in run_global_vars.waitset
+        run_global_vars.waitset.add(args[0])
         return True
 
 
@@ -270,8 +259,7 @@ class JSignalReturnWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 2
-        global signalset
-        signalset.add(args[0])
+        run_global_vars.signalset.add(args[0])
         return args[1]
 
 
@@ -282,9 +270,7 @@ class NetReceiver(threading.Thread):
         self.mux = mux
         self.verbose = verbose
 
-    def run(self, lock, cond, verbose=False):
-        global IO_inputs
-
+    def run(self, verbose=False):
         (skt, addr) = self.src
         (host, port) = addr
         all = []
@@ -293,12 +279,12 @@ class NetReceiver(threading.Thread):
             if not data:
                 break
             all.append(data)
-        with lock:
+        with run_global_vars.lock:
             msg = pickle.loads(b"".join(all))
             if verbose:
                 print("NetReceiver", addr, msg)
-            IO_inputs.append(FrozenDict({"intf": "tcp", "mux": self.mux, "data": msg}))
-            cond.notify()
+            run_global_vars.IO_inputs.append(FrozenDict({"intf": "tcp", "mux": self.mux, "data": msg}))
+            run_global_vars.cond.notify()
 
 
 class NetSender(threading.Thread):
@@ -340,16 +326,14 @@ class NetServer(threading.Thread):
 
 
 class Reader(threading.Thread):
-    def run(self, lock, cond):
-        global IO_inputs
-
+    def run(self):
         while True:
             inp = input()
-            with lock:
-                IO_inputs.append(
+            with run_global_vars.lock:
+                run_global_vars.IO_inputs.append(
                     FrozenDict({"intf": "fd", "mux": "stdin", "data": inp})
                 )
-                cond.notify()
+                run_global_vars.cond.notify()
 
 
 class IOPutWrapper(Wrapper):
@@ -358,7 +342,7 @@ class IOPutWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 3
-        IO_outputs.append(
+        run_global_vars.IO_outputs.append(
             FrozenDict({"intf": args[0], "mux": args[1], "data": args[2]})
         )
         return True
@@ -369,26 +353,24 @@ class IOWaitWrapper(Wrapper):
         return "IOUtils!IOWait(Pattern(_))"
 
     def __call__(self, ident, args):
-        global IO_running
-
         assert len(args) == 2
 
         # First check if there's already input
-        for x in IO_inputs:
+        for x in run_global_vars.IO_inputs:
             assert isinstance(x, FrozenDict)
             d = x.d
             if d["intf"] == args[0] and d["mux"] == args[1]:
                 return True
 
         # If not, make sure a reader/receiver is running
-        if (args[0], args[1]) not in IO_running:
+        if (args[0], args[1]) not in run_global_vars.IO_running:
             if args[0] == "fd" and args[1] == "stdin":
                 Reader().start()
             elif args[0] == "tcp":
                 NetServer(args[1]).start()
             else:
                 assert args[0] == "local"
-            IO_running.add((args[0], args[1]))
+            run_global_vars.IO_running.add((args[0], args[1]))
 
         return False
 
@@ -399,11 +381,11 @@ class IOGetWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 2
-        for x in IO_inputs:
+        for x in run_global_vars.IO_inputs:
             assert isinstance(x, FrozenDict)
             d = x.d
             if d["intf"] == args[0] and d["mux"] == args[1]:
-                IO_inputs.remove(x)
+                run_global_vars.IO_inputs.remove(x)
                 return d["data"]
         raise ValueError(f"IOGet.eval({args[0]}, {args[1]}) failed")
 

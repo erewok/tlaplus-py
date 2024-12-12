@@ -1,14 +1,14 @@
 import logging
 import sys
 
-from . import parser, wrappers
+from . import run_global_vars
 from .utils import convert, isnumeral, val_to_string
 from .wrappers import NetSender
 
 logger = logging.getLogger(__name__)
 
 def flush():
-    for x in wrappers.IO_outputs:
+    for x in run_global_vars.IO_outputs:
         d = x.d
         if d["intf"] == "fd":
             if d["mux"] == "stdout":
@@ -22,19 +22,19 @@ def flush():
             NetSender(d["mux"], d["data"]).start()
         else:
             assert d["intf"] == "local"
-            wrappers.IO_inputs.append(x)
+            run_global_vars.IO_inputs.append(x)
 
     wakeup = False
-    for x in wrappers.signalset:
-        if x in wrappers.waitset:
-            wrappers.waitset.remove(x)
+    for x in run_global_vars.signalset:
+        if x in run_global_vars.waitset:
+            run_global_vars.waitset.remove(x)
             wakeup = True
     if wakeup:
-        parser.cond.notifyAll()
+        run_global_vars.cond.notifyAll()
 
 def drain():
-    wrappers.IO_outputs = []
-    wrappers.signalset = set()
+    run_global_vars.IO_outputs = []
+    run_global_vars.signalset = set()
 
 
 def handle_output(output):
@@ -61,7 +61,7 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
     else:
         arg = args[1]
     while True:
-        with parser.lock:
+        with run_global_vars.lock:
             tries = 0
             flush()     # do all the outputs
             drain()     # remove all outputs
@@ -70,12 +70,12 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
                 if verbose:
                     logger.info(f"TRY AGAIN {tries}")
                 if tries > 100:
-                    parser.cond.wait(0.2)
+                    run_global_vars.cond.wait(0.2)
                 drain()
-                if parser.maxcount is not None and parser.step >= parser.maxcount:
+                if run_global_vars.maxcount is not None and run_global_vars.step >= run_global_vars.maxcount:
                     break
 
-            if parser.maxcount is not None and parser.step >= parser.maxcount:
+            if run_global_vars.maxcount is not None and run_global_vars.step >= run_global_vars.maxcount:
                 break
             if pp.unchanged():
                 if not silent:
@@ -83,9 +83,9 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
                 break
             tries = 0
             if not silent:
-                print("Next state:", parser.step, val_to_string(pp.getall()), flush=True)
-            parser.step += 1
+                print("Next state:", run_global_vars.step, val_to_string(pp.getall()), flush=True)
+            run_global_vars.step += 1
 
             # To implement JWait/JSignalReturn
-            while arg in wrappers.waitset:
-                parser.cond.wait(0.2)
+            while arg in run_global_vars.waitset:
+                run_global_vars.cond.wait(0.2)

@@ -45,7 +45,7 @@ run *args:
 
 # Run the regression tests
 regressions:
-    #!/bin/bash -Eeux
+    #!/bin/bash -u
     export PLUSPY_EXEC=./pluspy.sh
 
     for i in 1 2 3 4 5 6 7 9 10 11
@@ -58,6 +58,7 @@ regressions:
             ;;
         *)
             echo test $i failed
+            echo "To run the failing test -> PLUSPY_EXEC=./pluspy.sh ./tests/regression/test$i.sh"
             exit 1
         esac
     done

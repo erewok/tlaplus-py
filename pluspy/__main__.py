@@ -5,6 +5,7 @@ import sys
 import threading
 
 from . import parser
+from . import run_global_vars
 from .pluspy import exit, PlusPy
 from .runners import run
 from .utils import val_to_string
@@ -49,7 +50,7 @@ def main():
         if o in { "-v" }:
             verbose = True
         elif o in { "-c" }:
-            parser.maxcount = int(a)
+            run_global_vars.maxcount = int(a)
         elif o in { "-h", "--help" }:
             usage()
         elif o in { "-i", "--init" }:
@@ -86,7 +87,7 @@ def main():
     if verbose:
         logger.info("\n")
         logger.info("---------------")
-        logger.info(f"Run behavior for {parser.maxcount} steps")
+        logger.info(f"Run behavior for {run_global_vars.maxcount} steps")
         logger.info("---------------")
 
     if len(next_ops) != 0:

@@ -3,14 +3,7 @@ import os
 import random
 import sys
 
-from . import parser
-from .parser import (
-    ContainerExpression,
-    Module,
-    ModuleLoader,
-    OperatorExpression,
-    ValueExpression,
-)
+from . import ast
 from .utils import FrozenDict, simplify
 from .wrappers import build_wrappers
 
@@ -38,7 +31,7 @@ class PlusPy:
         self,
         filename: str,
         constants: dict | None = None,
-        module_loader: ModuleLoader | None = None,
+        module_loader: ast.ModuleLoader | None = None,
         seed=None,
         module_path: str = ".:./modules/lib:./modules/book:./modules/other",
     ):
@@ -46,10 +39,10 @@ class PlusPy:
             random.seed(seed)
 
         constants = constants or {}
-        self.mod_loader: ModuleLoader = module_loader or ModuleLoader({}, build_wrappers())
+        self.mod_loader: ast.ModuleLoader = module_loader or ast.ModuleLoader({}, build_wrappers())
         self.module_path = module_path
         # Load the module
-        self.mod = Module()
+        self.mod = ast.Module()
         if not filename.endswith(".tla"):
             filename += ".tla"
         result = self.mod.load_from_file(filename, self.mod_loader, self.module_path)
@@ -60,26 +53,26 @@ class PlusPy:
         self.mod_loader[self.mod.name] = self.mod
 
         self.constants = {
-            self.mod.constants[k]: ValueExpression(v) for (k, v) in constants.items()
+            self.mod.constants[k]: ast.ValueExpression(v) for (k, v) in constants.items()
         }
 
         # Substitute containers for variables
         self.containers = {
-            v: ContainerExpression(var=v) for v in self.mod.variables.values()
+            v: ast.ContainerExpression(var=v) for v in self.mod.variables.values()
         }
 
     def init(self, init_op):
         op = self.mod.operators[init_op]
-        assert isinstance(op, OperatorExpression)
+        assert isinstance(op, ast.OperatorExpression)
         assert op.args == []
 
         # Set the constants
         expr2 = op.expr.substitute(self.constants)
 
         # Replace variables with primed containers in state expressions
-        parser.initializing = True
+        ast.initializing = True
         expr3 = expr2.substitute(self.containers)
-        parser.initializing = False
+        ast.initializing = False
         r = expr3.eval(self.containers, {})
         if not r:
             logger.error(f"Initialization failed -- fatal error file={sys.stderr}")
@@ -103,7 +96,7 @@ class PlusPy:
         # Replace operator arguments with specified values
         # TODO.  Should be able to take more than 1 argument
         if len(args) > 0:
-            expr = expr.substitute({args[0]: ValueExpression(arg)})
+            expr = expr.substitute({args[0]: ast.ValueExpression(arg)})
 
         # Replace constants for their values and variables for containers
         expr2 = expr.substitute(self.constants)
@@ -132,7 +125,7 @@ class PlusPy:
     # TODO.  Should support multiple arguments
     def next(self, next_op, arg=None):
         op = self.mod.operators[next_op]
-        assert isinstance(op, OperatorExpression)
+        assert isinstance(op, ast.OperatorExpression)
         return self.trynext(op.expr, op.args, arg)
 
     # Check of state has not changed
