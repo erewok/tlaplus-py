@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from abc import ABC, abstractmethod
-from typing import Optional, TypeAlias
+from typing import TypeAlias
 
 from .lexer import InfixTokenKind, PostfixTokenKind, PrefixTokenKind, Token
 from .utils import (
@@ -151,7 +151,7 @@ class GModule(Rule):
                     tok("MODULE"),
                     Name(),
                     tok("----"),
-                    Optional(Concat([tok("EXTENDS"), CommaList(Name())]), [1]),
+                    Maybe(Concat([tok("EXTENDS"), CommaList(Name())]), [1]),
                     AtLeast(GUnit(), 0),
                     tok("===="),
                 ]
@@ -203,7 +203,7 @@ class AtLeast(Rule):
 
 # Recognizes an optional rule, i.e., 'rule?'
 # 'select' can be used similarly as in Rule.rule_match()
-class Optional(Rule):
+class Maybe(Rule):
     def __init__(self, rule, select=None):
         self.rule = rule
         self.select = select
@@ -211,13 +211,13 @@ class Optional(Rule):
     def parse(self, found_tokens: list[Token]):
         (node_type, node_content, rem) = self.rule.parse(found_tokens)
         if not node_type:
-            return ("Optional", None, found_tokens)
+            return ("Maybe", None, found_tokens)
         elif node_type == "Concat" and isinstance(self.select, list):
             if len(self.select) == 1:
-                return ("Optional", node_content[self.select[0]], rem)
-            return ("Optional", [node_content[i] for i in self.select], rem)
+                return ("Maybe", node_content[self.select[0]], rem)
+            return ("Maybe", [node_content[i] for i in self.select], rem)
         else:
-            return ("Optional", (node_type, node_content), rem)
+            return ("Maybe", (node_type, node_content), rem)
 
 
 class tok(Rule):  # noqa: N801
@@ -412,7 +412,7 @@ class Tuple(Rule):
                 [
                     tok("<<"),
                     # TODO.  Book does not allow empty tuples
-                    Optional(CommaList(GExpression(0))),
+                    Maybe(CommaList(GExpression(0))),
                     tok(">>"),
                 ]
             ),
@@ -422,7 +422,7 @@ class Tuple(Rule):
 
 class GUnit(Rule):
     def local(self, tag, decl):
-        return Tag(tag, Concat([Optional(tok("LOCAL")), decl]), [0, 1])
+        return Tag(tag, Concat([Maybe(tok("LOCAL")), decl]), [0, 1])
 
     def parse(self, found_tokens: list[Token]):
         return rule_match(
@@ -530,7 +530,7 @@ class GNonFixLHS(Rule):
             Concat(
                 [
                     Identifier(),
-                    Optional(Concat([tok("("), CommaList(GOpDecl()), tok(")")]), [1]),
+                    Maybe(Concat([tok("("), CommaList(GOpDecl()), tok(")")]), [1]),
                 ]
             ),
             [0, 1],
@@ -625,7 +625,7 @@ class GAssumption(Rule):
             Concat(
                 [
                     OneOf([tok("ASSUME"), tok("ASSUMPTION"), tok("AXIOM")]),
-                    Optional(Concat([Identifier(), tok("==")])),
+                    Maybe(Concat([Identifier(), tok("==")])),
                     GExpression(0),
                 ]
             ),
@@ -673,7 +673,7 @@ class GInstance(Rule):
                 [
                     tok("INSTANCE"),
                     Name(),
-                    Optional(Concat([tok("WITH"), CommaList(GSubstitution())]), [1]),
+                    Maybe(Concat([tok("WITH"), CommaList(GSubstitution())]), [1]),
                 ]
             ),
             [1, 2],
@@ -722,7 +722,7 @@ class GInstancePrefix(Rule):
                 Concat(
                     [
                         Identifier(),
-                        Optional(
+                        Maybe(
                             Concat(
                                 [
                                     tok("("),
@@ -794,46 +794,41 @@ class GModuleDefinition(Rule):
         )
 
 
-# a disjunct or conjunct token is identifier by all but the line in the token
-def junct(token):
-    (lex, _line, column, first) = token
-    return (lex, column, first)
-
-
 class GExpression(Rule):
     def __init__(self, level):
         self.level = level
 
-    def parse(self, s):
-        if s == []:
-            return parse_error(["GExpression: empty list"], s)
+    def parse(self, found_tokens: list[Token]):
+        if found_tokens == []:
+            return parse_error(["GExpression: empty list"], found_tokens)
 
         # If at the top precedence level, get a basic expression.
         if self.level == 18:
-            return rule_match("GExpression18", s, GBasicExpression(), True)
+            return rule_match("GExpression18", found_tokens, GBasicExpression(), True)
 
         # See if this is an expression starting with /\ or \/
-        lex = s[0].lexeme
+        first = found_tokens[0]
+        lex = first.lexeme
         if lex in {"/\\", "\\/"}:
-            lex = s[0].lexeme
-            column = s[0].column
-            token = (lex, column, True)
+            lex: str = first.lexeme
+            column: int = first.column
+            token: tuple[str, int, bool] = (lex, column, True)
             stack.append(token)
-            (node_type, node_content, rem) = GExpression(0).parse(s[1:])
+            (node_type, node_content, rem) = GExpression(0).parse(found_tokens[1:])
             if node_type is False:
                 stack.pop()
                 return parse_error(
-                    [("GExpression" + str(self.level), s[0])] + node_content, rem
+                    [(f"GExpression{self.level}", first), *node_content], rem
                 )
 
-            while rem != [] and junct(rem[0]) == token:
+            while rem != [] and rem[0].junct == token:
                 (node_type2, node_content2, rem2) = GExpression(0).parse(rem[1:])
                 if not node_type2:
                     stack.pop()
-                    return parse_error(["GExpression0"] + node_content2, rem2)
+                    return parse_error(["GExpression0", *node_content2], rem2)
                 (node_type, node_content, rem) = (
                     "Infix0",
-                    (s[0], (node_type, node_content), (node_type2, node_content2)),
+                    (first, (node_type, node_content), (node_type2, node_content2)),
                     rem2,
                 )
             stack.pop()
@@ -841,37 +836,37 @@ class GExpression(Rule):
 
         # See if the expression starts with a prefix operator.
         # TODO.  Should match again GGeneralPrefixOp
-        token_kind = PrefixTokenKind.get(s[0].lexeme)
+        token_kind = PrefixTokenKind.get(found_tokens[0].lexeme)
         if token_kind is not None:
             # Compute the precedence level of the operator.
             prec = token_kind.precedence()
 
             # Parse an expression of the given precedence level.
-            (node_type, node_content, rem) = GExpression(prec).parse(s[1:])
+            (node_type, node_content, rem) = GExpression(prec).parse(found_tokens[1:])
             if node_type is False:
                 return parse_error(
-                    ["GExpression" + str(self.level) + ": " + str(s[0])] + node_content,
+                    ["GExpression" + str(self.level) + ": " + str(found_tokens[0])] + node_content,
                     rem,
                 )
             (node_type, node_content, rem) = (
                 "Prefix" + str(prec),
-                (s[0], (node_type, node_content)),
+                (found_tokens[0], (node_type, node_content)),
                 rem,
             )
 
         # If not a prefix get an expression at the next precedence level
         else:
-            (node_type, node_content, rem) = GExpression(self.level + 1).parse(s)
+            (node_type, node_content, rem) = GExpression(self.level + 1).parse(found_tokens)
             if node_type is False:
                 return parse_error(
-                    ["GExpression" + str(self.level) + ": " + str(s[0])] + node_content,
+                    ["GExpression" + str(self.level) + ": " + str(found_tokens[0])] + node_content,
                     rem,
                 )
 
         # Loop through the remainder.
         while rem != []:
             # If a disjunct or conjunct, we're done.
-            if junct(rem[0]) in stack:
+            if rem[0].junct in stack:
                 return (node_type, node_content, rem)
 
             # See if it's a postfix expression with sufficient precedence
@@ -1036,7 +1031,7 @@ class GBasicExpression(Rule):
                         Concat(
                             [
                                 GGeneralIdentifier(),
-                                Optional(
+                                Maybe(
                                     Concat(
                                         [tok("("), CommaList(GArgument()), tok(")")]
                                     ),
@@ -1101,7 +1096,7 @@ class GBasicExpression(Rule):
                     Tag(
                         "set",
                         Concat(
-                            [tok("{"), Optional(CommaList(GExpression(0))), tok("}")]
+                            [tok("{"), Maybe(CommaList(GExpression(0))), tok("}")]
                         ),
                         [1],
                     ),
@@ -1205,7 +1200,7 @@ class GBasicExpression(Rule):
                             [
                                 tok("CHOOSE"),
                                 Identifier(),
-                                Optional(Concat([tok("\\in"), GExpression(0)]), [1]),
+                                Maybe(Concat([tok("\\in"), GExpression(0)]), [1]),
                                 tok(":"),
                                 GExpression(0),
                             ]
@@ -1236,7 +1231,7 @@ class GBasicExpression(Rule):
                                     "[]",
                                     False,
                                 ),
-                                Optional(
+                                Maybe(
                                     Concat(
                                         [
                                             tok("[]"),

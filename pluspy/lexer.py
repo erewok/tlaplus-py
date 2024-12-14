@@ -111,7 +111,7 @@ class PrefixTokenKind(TokenPrecedenceMixin, Enum):
 @unique
 class InfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
     Ampersand = ("&", (13, 13))
-    And = ("/\\", (3, 3))
+    And = ("/\\", (3, 3))  # This often starts an expression as well
     Backslash = ("\\", (8, 8))
     BangBang = ("!!", (9, 13))
     Bar = ("|", (10, 11))
@@ -150,7 +150,7 @@ class InfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
     MinusPlusArrow = ("-+->", (2, 2))
     MutualImplies = ("<=>", (2, 2))
     NotEqual = ("/=", (5, 5))
-    Or = ("\\/", (3, 3))
+    Or = ("\\/", (3, 3))   # This often starts an expression as well
     ParensDot = ("(.)", (11, 11))
     ParensMinus = ("(-)", (11, 11))
     ParensPlus = ("(+)", (10, 10))
@@ -266,6 +266,11 @@ class Token:
     def __str__(self):
         (file, line) = self.where
         return f"Token('{self.lexeme}', {file}: ({line=}, col={self.column}), {self.first})"
+
+    @property
+    def junct(self):
+        """A disjunct or conjunct token is identifier by all but the line in the token"""
+        return (self.lexeme, self.column, self.first)
 
 
 KNOWN_TOKENS = list(filter(token_predicate, build_token_list()))

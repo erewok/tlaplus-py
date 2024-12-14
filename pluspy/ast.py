@@ -149,7 +149,7 @@ class Module:
         assert t2 == "Identifier"
         id = a2.lexeme
         (t3, a3) = a0[1]
-        assert t3 == "Optional"
+        assert t3 == "Maybe"
         if a3 is None:
             args = []
         else:
@@ -200,7 +200,7 @@ class Module:
             self.compile_constant_declaration(a)
         elif t == "decl-op":
             (tloc, aloc) = a[0]
-            assert tloc == "Optional"
+            assert tloc == "Maybe"
             (t1, a1) = a[1]
             assert t1 == "GOperatorDefinition"
             (ident, args, expr) = compile_operator_definition(a1)
@@ -220,7 +220,7 @@ class Module:
                 logger.info(f"+-> {ident=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-inst":
             (tloc, aloc) = a[0]
-            assert tloc == "Optional"
+            assert tloc == "Maybe"
             mi = ModInst()
             mi.compile(a[1], mod_loader, module_path)
             for k in mi.globals:
@@ -229,7 +229,7 @@ class Module:
                     self.globals.add(k)
         elif t == "decl-fun":
             (tloc, aloc) = a[0]
-            assert tloc == "Optional"
+            assert tloc == "Maybe"
             (t1, a1) = a[1]
             assert t1 == "GFunctionDefinition"
             (id, args, expr) = compile_function_definition(a1)
@@ -244,7 +244,7 @@ class Module:
                 logger.info(f"++> {id=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-mod":
             (tloc, aloc) = a[0]
-            assert tloc == "Optional"
+            assert tloc == "Maybe"
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
             self.compile_module_definition(
@@ -296,7 +296,7 @@ class Module:
         name_stack.append({})
 
         (t1, a1) = a[1]
-        assert t1 == "Optional"
+        assert t1 == "Maybe"
         if a1 is not None:
             (tx, ax) = a1
             assert tx == "CommaList"
@@ -446,7 +446,7 @@ class ModInst:
         self.module = load_module(a1.lexeme, mod_loader, module_path)
 
         (t2, a2) = a[1]
-        assert t2 == "Optional"
+        assert t2 == "Maybe"
         d = {}
         if a2 is not None:
             (t3, a3) = a2
@@ -526,7 +526,7 @@ def getprefix(ast, operators):
             print("trying to instantiate", od.expr)
         assert isinstance(od.expr, ModInst)
         (t4, a4) = a2[1]
-        assert t4 == "Optional"
+        assert t4 == "Maybe"
         args = []
         if a4 is not None:
             (t5, a5) = a4
@@ -608,7 +608,7 @@ def compile_op_expression(od):
     assert t2 in {"Identifier", "Tok"}
     name = a2.lexeme
     (t3, a3) = od[1]
-    assert t3 == "Optional"
+    assert t3 == "Maybe"
     if a3 is None:
         args = []
     else:
@@ -726,7 +726,7 @@ def compile_expression(ast):
     elif t == "op":
         return compile_op_expression(a)
     elif t in {"arg-prefix", "arg-infix", "arg-postfix"}:
-        return compile_op_expression([a, ("Optional", None)])
+        return compile_op_expression([a, ("Maybe", None)])
     elif t in {"exists", "forall", "lambda"}:
         return compile_quant_bound_expression(t, a[0], a[1])
     elif t == "gen":
@@ -795,7 +795,7 @@ def compile_operator_definition(od):
         assert t2 == "Identifier"
         id = a2.lexeme
         (t3, a3) = a0[1]
-        assert t3 == "Optional"
+        assert t3 == "Maybe"
         if a3 is None:
             args = []
         else:
@@ -1825,7 +1825,7 @@ class ChooseExpression(Expression):
         assert t == "Identifier"
         self.id = BoundvarExpression(a.lexeme)
         (t1, a1) = expr[1]
-        assert t1 == "Optional"
+        assert t1 == "Maybe"
         self.domain = None if a1 is None else compile_expression(a1)
 
         name_stack.append({self.id.id: self.id})
@@ -1965,7 +1965,7 @@ class CaseExpression(Expression):
         (t0, a0) = expr[0]
         assert t0 == "SeparatorList"
         (t1, a1) = expr[1]
-        assert t1 == "Optional"
+        assert t1 == "Maybe"
 
         self.primed = False
         self.cases = []
@@ -2355,7 +2355,7 @@ class TupleExpression(Expression):
     def from_ast(self, ast):
         self.primed = False
         (t, a) = ast
-        assert t == "Optional"
+        assert t == "Maybe"
         if a is None:
             self.exprs = []
         else:
@@ -2400,7 +2400,7 @@ class SetExpression(Expression):
 
     def from_ast(self, ast):
         (t, a) = ast
-        assert t == "Optional"
+        assert t == "Maybe"
         self.primed = False
         self.elements = []
         if a is not None:
@@ -2606,7 +2606,7 @@ def print_ast(x, indent):
         print(" " + op + ":")
         print_ast(expr, indent + "..")
         print(indent + ")")
-    elif t == "Optional":
+    elif t == "Maybe":
         if a is None:
             print(" None)")
         else:
