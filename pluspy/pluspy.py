@@ -30,22 +30,30 @@ class PlusPy:
     def __init__(
         self,
         filename: str,
+        module_path: str,
         constants: dict | None = None,
         module_loader: ast.ModuleLoader | None = None,
-        seed=None,
-        module_path: str = ".:./modules/lib:./modules/book:./modules/other",
+        seed: int | float | str | bytes | bytearray | None = None,
+        verbose: bool = False,
+        silent: bool = False,
     ):
         if seed is not None:
             random.seed(seed)
 
         constants = constants or {}
-        self.mod_loader: ast.ModuleLoader = module_loader or ast.ModuleLoader({}, build_wrappers())
-        self.module_path = module_path
+        self.mod_loader: ast.ModuleLoader = module_loader or ast.ModuleLoader(
+            module_path,
+            modules={},
+            verbose=verbose,
+            silent=silent,
+            wrappers=build_wrappers()
+        )
         # Load the module
         self.mod = ast.Module()
         if not filename.endswith(".tla"):
             filename += ".tla"
-        result = self.mod.load_from_file(filename, self.mod_loader, self.module_path)
+
+        result = self.mod.load_from_file(filename, self.mod_loader)
         if not result:
             raise PlusPyError("can't load " + filename)
 
@@ -62,8 +70,12 @@ class PlusPy:
         }
 
     def init(self, init_op):
-        op = self.mod.operators[init_op]
-        assert isinstance(op, ast.OperatorExpression)
+        op = self.mod.operators.get(init_op)
+        if op is None:
+            logger.error(f"Init Operator '{init_op}' not found")
+            exit(1)
+
+        assert isinstance(op, ast.OperatorExpression), "Init Operator must be an OperatorExpression"
         assert op.args == []
 
         # Set the constants
@@ -124,8 +136,11 @@ class PlusPy:
 
     # TODO.  Should support multiple arguments
     def next(self, next_op, arg=None):
-        op = self.mod.operators[next_op]
-        assert isinstance(op, ast.OperatorExpression)
+        op = self.mod.operators.get(next_op)
+        if op is None:
+            logger.error(f"Next Operator '{next_op}' not found")
+            exit(1)
+        assert isinstance(op, ast.OperatorExpression), "Next Operator must be an OperatorExpression"
         return self.trynext(op.expr, op.args, arg)
 
     # Check of state has not changed

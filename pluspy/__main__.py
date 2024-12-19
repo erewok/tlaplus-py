@@ -1,10 +1,9 @@
-import getopt
+import argparse
 import logging
 import os
 import sys
 import threading
 
-from . import parser
 from . import run_global_vars
 from .pluspy import exit, PlusPy
 from .runners import run
@@ -15,62 +14,79 @@ logger.setLevel(logging.INFO)
 logger.handlers = [logging.StreamHandler(sys.stdout)]
 
 
-def usage():
-    print("Usage: pluspy [options] tla-module")
-    print("  options: ")
-    print("    -c cnt: max #times that Next should be evaluated")
-    print("    -h: help")
-    print("    -i operator: Init operator (default Init)")
-    print("    -n operator: Next operator (default Next)")
-    print("    -P path: module directory search path")
-    print("    -s: silent")
-    print("    -S seed: random seed")
-    print("    -v: verbose output")
-    exit(1)
-
-
 DEFAULT_MODULE_PATH = ".:./modules/lib:./modules/book:./modules/other"
 
-def main():
-    pluspypath = os.environ.get("PLUSPYPATH", DEFAULT_MODULE_PATH)
-    # Get options.  First set default values
-    init_op = "Init"
-    next_ops = set()
-    seed = None
-    try:
-        opts, args = getopt.getopt(sys.argv[1:],
-                        "c:hi:n:P:sS:v",
-                        ["help", "init=", "next=", "path=", "seed="])
-    except getopt.GetoptError as err:
-        logger.error(str(err))
-        usage()
-    verbose = False
-    silent = False
-    for o, a in opts:
-        if o in { "-v" }:
-            verbose = True
-        elif o in { "-c" }:
-            run_global_vars.maxcount = int(a)
-        elif o in { "-h", "--help" }:
-            usage()
-        elif o in { "-i", "--init" }:
-            init_op = a
-        elif o in { "-n", "--next"  }:
-            next_ops.add(a)
-        elif o in { "-P", "--path" }:
-            pluspypath = a
-        elif o in { "-s" }:
-            silent = True
-        elif o in { "-S", "--seed" }:
-            seed = int(a)
-        else:
-            raise ValueError("unhandled option")
-    if len(args) != 1:
-        usage()
 
-    parser.verbose = verbose
-    parser.silent = silent
-    pp = PlusPy(args[0], seed=seed, module_path=pluspypath  )
+def cli():
+    """Parse command line arguments."""
+    pluspypath = os.environ.get("PLUSPYPATH", DEFAULT_MODULE_PATH)
+    parser = argparse.ArgumentParser(description="Run a TLA+ module")
+    parser.add_argument("module", help="The TLA+ module to run")
+    parser.add_argument(
+        "-c",
+        "--count",
+        type=int,
+        default=1,
+        help="The maximum number of times to evaluate Next",
+    )
+    parser.add_argument(
+        "-i",
+        "--init",
+        default="Init",
+        help="The name of the Init operator to run",
+    )
+    parser.add_argument(
+        "-n",
+        "--next",
+        action="append",
+        default="Next",
+        help="The name of the Next operator to run",
+    )
+    parser.add_argument(
+        "-P",
+        "--path",
+        default=pluspypath,
+        help="The path to search for TLA+ modules",
+    )
+    parser.add_argument(
+        "-S",
+        "--seed",
+        type=int,
+        help="The random seed to use",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print verbose output",
+    )
+    parser.add_argument(
+        "-s",
+        "--silent",
+        action="store_true",
+        help="Suppress output",
+    )
+    return parser.parse_args()
+
+
+def main():
+    """Main entry point for the pluspy command line tool."""
+    args = cli()
+    run_global_vars.maxcount = args.count
+    run_module = args.module
+    pluspypath = args.path
+    # Get options.  First set default values
+    init_op = args.init
+    next_ops = set()
+    if args.next:
+        next_ops.add(args.next)
+
+    verbose = args.verbose
+    silent = args.silent
+
+    pp = PlusPy(
+        run_module, pluspypath, seed=args.seed, verbose=verbose, silent=silent
+    )
     mod = pp.mod
     if verbose:
         logger.info(f"Loaded module: {mod.name}")
@@ -90,10 +106,14 @@ def main():
         logger.info(f"Run behavior for {run_global_vars.maxcount} steps")
         logger.info("---------------")
 
-    if len(next_ops) != 0:
+    if next_ops:
         threads = set()
         for next in next_ops:
-            t = threading.Thread(target=run, args=(pp, next), kwargs={"silent": silent, "verbose": verbose})
+            t = threading.Thread(
+                target=run,
+                args=(pp, next),
+                kwargs={"silent": silent, "verbose": verbose},
+            )
             threads.add(t)
             t.start()
         for t in threads:
@@ -103,6 +123,7 @@ def main():
     if not silent:
         logger.info("MAIN DONE")
     exit(0)
+
 
 if __name__ == "__main__":
     main()

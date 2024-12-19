@@ -26,7 +26,7 @@ def exit(status):
 #   - a constant
 #   - an operator
 #   - an argument of that operator
-#   - a bounded variable (\E, ...)
+#   - a bound variable (\E, ...)
 #   - a module
 #
 
@@ -287,7 +287,6 @@ class Identifier(Rule):
         if node_type != "Name":
             return parse_error(["Identifier: not a Name"] + node_content, found_tokens)
 
-        # breakpoint()
         lex = node_content.lexeme
         if lex in RESERVED_WORDS:
             return parse_error(

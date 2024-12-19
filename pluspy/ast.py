@@ -31,9 +31,9 @@ bv_counter = 0
 # kludge: for transforming expression for initialization
 initializing = False
 
-# Verbose output
-silent = False
-verbose = False
+
+def tokens_to_string(tokens):
+    return ", ".join(map(lambda t: f"\n{str(t)}" if t.first else str(t), tokens))
 
 
 # Find a file using a directory path
@@ -50,13 +50,19 @@ def file_find(name, path):
 ####    Module specification
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 class ModuleLoader:
-    __slots__ = ["loaded_modules", "wrappers"]
+    __slots__ = ["loaded_modules", "wrappers", "module_path", "verbose", "silent"]
 
     def __init__(
         self,
+        module_path: str,
         modules: dict | None = None,
+        verbose: bool = False,
+        silent: bool = False,
         wrappers: dict[str, dict[str, "wrappers.Wrapper"]] | None = None,
     ):
+        self.module_path = module_path
+        self.verbose = verbose
+        self.silent = silent
         self.loaded_modules: dict[str, Module] = modules
         self.wrappers = wrappers
 
@@ -84,17 +90,8 @@ class Module:
         self.globals = set()  # set of non-LOCAL names
 
     def __str__(self):
-        return (
-            "Module("
-            + self.name
-            + ", "
-            + str(self.constants)
-            + ", "
-            + str(self.variables)
-            + ", "
-            + str(self.operators.keys())
-            + ")"
-        )
+        op_names = ", ".join(self.operators.keys())
+        return f"Module({self.name}, constants={self.constants}, vars={self.variables}, operators={op_names})"
 
     # handle a CONSTANT declaration
     def compile_constant_declaration(self, ast):
@@ -138,7 +135,7 @@ class Module:
 
     # handle an "Operator == INSTANCE name" definition
     def compile_module_definition(
-        self, md, is_global, mod_loader: ModuleLoader, module_path: str
+        self, md, is_global: bool, mod_loader: ModuleLoader
     ):
         (t0, a0) = md[0]
         assert t0 == "GNonFixLHS"
@@ -179,7 +176,7 @@ class Module:
         mi = ModInst()
         args = [ArgumentExpression(a, c) for (a, c) in cargs]
         name_stack.append({a.id: a for a in args})
-        mi.compile(inst, mod_loader, module_path)
+        mi.compile(inst, mod_loader)
         name_stack.pop()
 
         # We put the ModInst inside the expr field of an OperatorExpression
@@ -188,11 +185,11 @@ class Module:
         if is_global:
             self.globals.add(id)
         name_stack[-1][id] = od
-        if verbose:
+        if mod_loader.verbose:
             logger.info(f"++> {od}, {mi}")
 
     # handle the next TLA "Unit" in the source
-    def compile_unit(self, tree, mod_loader: ModuleLoader, module_path: str):
+    def compile_unit(self, tree, mod_loader: ModuleLoader):
         (t, a) = tree
         if t == "GVariableDeclaration":
             self.compile_variable_declaration(a)
@@ -216,13 +213,13 @@ class Module:
             if aloc is None:
                 self.globals.add(ident)
             name_stack[-1][ident] = od.expr if args == [] else od
-            if verbose:
+            if mod_loader.verbose:
                 logger.info(f"+-> {ident=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-inst":
             (tloc, aloc) = a[0]
             assert tloc == "Maybe"
             mi = ModInst()
-            mi.compile(a[1], mod_loader, module_path)
+            mi.compile(a[1], mod_loader)
             for k in mi.globals:
                 self.operators[k] = mi.operators[k]
                 if aloc is None:
@@ -240,7 +237,7 @@ class Module:
             assert args == []
             # name_stack[-1][id] = od
             name_stack[-1][id] = expr
-            if verbose:
+            if mod_loader.verbose:
                 logger.info(f"++> {id=}, {args=}, {expr.primed=}\n\t{expr=}")
         elif t == "decl-mod":
             (tloc, aloc) = a[0]
@@ -248,13 +245,13 @@ class Module:
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
             self.compile_module_definition(
-                a1, tloc is not None, mod_loader, module_path
+                a1, tloc is not None, mod_loader
             )
         elif t in {"GTheorem", "GAssumption", "GDivider"}:
             pass
         elif t == "GModule":
             mod = Module()
-            mod.compile(tree, mod_loader, module_path)
+            mod.compile(tree, mod_loader)
             name_stack[-1][mod.name] = mod
         else:
             logger.error(
@@ -263,10 +260,10 @@ class Module:
             raise AssertionError("Invalid unit")
 
     # Get operators from EXTENDS clause
-    def extends(self, ast, mod_loader: ModuleLoader, module_path: str):
+    def extends(self, ast, mod_loader: ModuleLoader):
         for n, m in ast:
             assert n == "Name"
-            mod = load_module(m.lexeme, mod_loader, module_path)
+            mod = load_module(m.lexeme, mod_loader)
             assert mod.constants == dict()
             assert mod.variables == dict()
             for k in mod.globals:
@@ -277,7 +274,7 @@ class Module:
                 name_stack[-1][k] = mod.operators[k]
 
     # Given AST, handle all the TLA+ units in the AST
-    def compile(self, tree, mod_loader: ModuleLoader, module_path: str):
+    def compile(self, tree, mod_loader: ModuleLoader):
         (t, a) = tree
         if t is False:
             return False
@@ -300,14 +297,14 @@ class Module:
         if a1 is not None:
             (tx, ax) = a1
             assert tx == "CommaList"
-            self.extends(ax, mod_loader, module_path)
+            self.extends(ax, mod_loader)
 
         (t2, a2) = a[2]
         assert t2 == "AtLeast0"
         for ast2 in a2:
-            self.compile_unit(ast2, mod_loader, module_path)
+            self.compile_unit(ast2, mod_loader)
 
-        if verbose:
+        if mod_loader.verbose:
             logger.info(f"{self.name} Variables: {self.variables}")
 
         name_stack.pop()
@@ -315,17 +312,15 @@ class Module:
 
     # Load and compile the given TLA+ source, which is a string
     def load_from_string(
-        self, source, srcid, mod_loader: ModuleLoader, module_path: str
+        self, source_str, srcid, mod_loader: ModuleLoader
     ):
         # First run source through lexical analysis
-        tokens: list[Token] = lexer(source, srcid)
-        if verbose:
+        tokens: list[Token] = lexer(source_str, srcid)
+        if mod_loader.verbose:
             logger.info("---------------")
             logger.info("Output from Lexer")
             logger.info("---------------")
-            logger.info(
-                ", ".join(map(lambda t: f"\n{str(t)}" if t.first else str(t), tokens))
-            )
+            logger.info(tokens_to_string(tokens))
 
         # Parse the output from the lexer into an AST
         gmod = GModule()
@@ -349,33 +344,33 @@ class Module:
             logger.info(f"Remainder {rem[0]}")
 
         # Handle all TLA+ units in the AST
-        if verbose:
+        if mod_loader.verbose:
             logger.info("---------------")
-            splitted = source.split("\n")[0].replace("-", "")
+            splitted = source_str.split("\n")[0].replace("-", "")
             logger.info(f"Compile {splitted}")
             logger.info("---------------")
 
         modstk.append(self)
-        result = self.compile((node_type, node_content), mod_loader, module_path)
+        result = self.compile((node_type, node_content), mod_loader)
         modstk.pop()
 
         return result
 
-    def load(self, f, srcid, mod_loader: ModuleLoader, module_path: str):
+    def load(self, f, srcid, mod_loader: ModuleLoader):
         all = ""
         for line in f:
             all += line
-        return self.load_from_string(all, srcid, mod_loader, module_path)
+        return self.load_from_string(all, srcid, mod_loader)
 
-    def load_from_file(self, file, mod_loader: ModuleLoader, module_path: str):
-        full = file_find(file, module_path)
+    def load_from_file(self, file, mod_loader: ModuleLoader):
+        full = file_find(file, mod_loader.module_path)
         if not full:
             return False
         with open(full) as f:
-            return self.load(f, file, mod_loader, module_path)
+            return self.load(f, file, mod_loader)
 
 
-def load_module(name: str, mod_loader: ModuleLoader, module_path: str):
+def load_module(name: str, mod_loader: ModuleLoader):
     mod = name_lookup(name)
     if mod is False:
         if mod := mod_loader.get(name):
@@ -383,7 +378,7 @@ def load_module(name: str, mod_loader: ModuleLoader, module_path: str):
 
     mod = Module()
     name_stack.append({})
-    if not mod.load_from_file(name + ".tla", mod_loader, module_path):
+    if not mod.load_from_file(name + ".tla", mod_loader):
         logger.error(f"can't load {name}: fatal error file={sys.stderr}")
         exit(1)
     name_stack.pop()
@@ -438,12 +433,12 @@ class ModInst:
         self.module = module
         self.substitutions = substitutions
 
-    def compile(self, tree, mod_loader: ModuleLoader, module_path: str):
+    def compile(self, tree, mod_loader: ModuleLoader):
         (t, a) = tree
         assert t == "GInstance"
         (t1, a1) = a[0]
         assert t1 == "Name"
-        self.module = load_module(a1.lexeme, mod_loader, module_path)
+        self.module = load_module(a1.lexeme, mod_loader)
 
         (t2, a2) = a[1]
         assert t2 == "Maybe"
@@ -1111,7 +1106,7 @@ class OperatorExpression(Expression):
         self.primed = primed
 
     def __str__(self):
-        return "Operator(" + self.id + ", " + str(self.args) + ")"
+        return "OperatorExpression(" + self.id + ", " + str(self.args) + ")"
         # + ", " + self.expr.__str__() \
 
     def substitute(self, subs):
@@ -1441,7 +1436,7 @@ class TemporalForallExpression(Expression):
     def substitute(self, subs):
         raise NotImplementedError("substitute not implemented")
 
-    def eval(self, containers, boundedvars):
+    def eval(self, *args, **kwargs):
         raise NotImplementedError("eval not implemented")
 
 
@@ -1757,9 +1752,6 @@ class OutfixExpression(Expression):
         tries = 0
         i = 0
         while True:
-            if not silent:
-                s = {k.id: c.next for (k, c) in containers.items()}
-                print("Next state:", i, val_to_string(FrozenDict(s)))
             if run_global_vars.maxcount is not None and i >= run_global_vars.maxcount:
                 exit(0)
             for c in containers.values():
@@ -1773,15 +1765,13 @@ class OutfixExpression(Expression):
                         changed = True
                         break
                 if not changed:
-                    if not silent:
-                        print("State unchanged")
                     break
                 tries = 0
             else:
                 for c in containers.values():
                     c.next = c.prev
                 tries += 1
-                if verbose or tries % 100 == 0:
+                if tries % 100 == 0:
                     print("always: try again", tries)
                     run_global_vars.cond.wait(0.2)
             i += 1

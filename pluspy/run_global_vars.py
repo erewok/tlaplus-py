@@ -5,10 +5,16 @@ import threading
 lock = threading.Lock()
 cond = threading.Condition(lock)
 maxcount = None
-step = 0
 waitset = set()
 signalset = set()
 TLCvars = {}
 IO_inputs = []
 IO_outputs = []
 IO_running = set()
+
+
+def checkcontinue(_step: int) -> bool:
+    return not checkstop(_step)
+
+def checkstop(_step: int) -> bool:
+    return maxcount is not None and _step >= maxcount

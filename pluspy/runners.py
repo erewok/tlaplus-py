@@ -60,31 +60,32 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
         arg = int(args[1])
     else:
         arg = args[1]
+
+    step = 0
     while True:
         with run_global_vars.lock:
             tries = 0
             flush()     # do all the outputs
             drain()     # remove all outputs
-            while not pp.next(args[0], arg):
+            while not pp.next(args[0], arg) and run_global_vars.checkcontinue(step):
                 tries += 1
                 if verbose:
                     logger.info(f"TRY AGAIN {tries}")
                 if tries > 100:
                     run_global_vars.cond.wait(0.2)
                 drain()
-                if run_global_vars.maxcount is not None and run_global_vars.step >= run_global_vars.maxcount:
-                    break
 
-            if run_global_vars.maxcount is not None and run_global_vars.step >= run_global_vars.maxcount:
+            if run_global_vars.checkstop(step):
                 break
+
             if pp.unchanged():
                 if not silent:
                     print("No state change after successful step", flush=True)
                 break
             tries = 0
             if not silent:
-                print("Next state:", run_global_vars.step, val_to_string(pp.getall()), flush=True)
-            run_global_vars.step += 1
+                print("Next state:", step, val_to_string(pp.getall()), flush=True)
+            step += 1
 
             # To implement JWait/JSignalReturn
             while arg in run_global_vars.waitset:
