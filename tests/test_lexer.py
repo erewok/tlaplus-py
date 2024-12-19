@@ -8,7 +8,7 @@ class TestLexer(unittest.TestCase):
         cases = [
             {
                 "name": "preamble",
-                "input": r'''
+                "input": r"""
                          This is some prose preceding the module definition.
 
                          \* WORKAROUND: Comment prose before the module definition.
@@ -18,11 +18,11 @@ class TestLexer(unittest.TestCase):
                          VARIABLE x
                          Spec == x = TRUE /\ [][x'\in BOOLEAN]_x
                          ====
-                         ''',
+                         """,
             },
             {
                 "name": "preamble with four dashes",
-                "input": r'''
+                "input": r"""
                          ---- What is this
 
                          \* A comment
@@ -30,11 +30,11 @@ class TestLexer(unittest.TestCase):
                          And more preamble there is.
 
                          ------------------------------- MODULE Somename -------------------------------
-                         ''',
+                         """,
             },
             {
                 "name": "preamble with commented module",
-                "input": r''''
+                "input": r"""'
                          ---- What is this
 
                          \* A comment
@@ -45,7 +45,7 @@ class TestLexer(unittest.TestCase):
 
 
                          ================================ =============================================
-                '''
+                """,
             },
         ]
 
@@ -53,22 +53,17 @@ class TestLexer(unittest.TestCase):
             results = lexer.lexer(case["input"], "nofile.tla")
             a, b, _, d = results[0], results[1], results[2], results[3]
             self.assertEqual(
-                "----", a.lexeme,
-                "failed test {} expected {}, actual {}".format(
-                    case["name"], "----", a
-                ),
+                "----",
+                a.lexeme,
+                "failed test {} expected {}, actual {}".format(case["name"], "----", a),
             )
             self.assertEqual(
-                "MODULE", b.lexeme,
-                "failed test {} expected {}, actual {}".format(
-                    case["name"], "MODULE", b
-                ),
+                "MODULE",
+                b.lexeme,
+                "failed test {} expected {}, actual {}".format(case["name"], "MODULE", b),
             )
             self.assertEqual(
-                "----", d.lexeme,
-                "failed test {} expected {}, actual {}".format(
-                    case["name"], "----", a
-                ),
+                "----",
+                d.lexeme,
+                "failed test {} expected {}, actual {}".format(case["name"], "----", a),
             )
-
-

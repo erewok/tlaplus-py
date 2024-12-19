@@ -16,5 +16,6 @@ IO_running = set()
 def checkcontinue(_step: int) -> bool:
     return not checkstop(_step)
 
+
 def checkstop(_step: int) -> bool:
     return maxcount is not None and _step >= maxcount

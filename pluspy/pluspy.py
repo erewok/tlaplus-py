@@ -1,30 +1,18 @@
 import logging
-import os
 import random
 import sys
 
 from . import ast
+from .errors import PlusPyError
 from .utils import FrozenDict, simplify
 from .wrappers import build_wrappers
 
 logger = logging.getLogger(__name__)
 
 
-def exit(status):
-    sys.stdout.flush()
-    os._exit(status)
-
-
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Main Class
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-class PlusPyError(Exception):
-    def __init__(self, descr):
-        self.descr = descr
-
-    def __str__(self):
-        return "PlusPyError: " + self.descr
-
 
 class PlusPy:
     def __init__(
@@ -42,11 +30,7 @@ class PlusPy:
 
         constants = constants or {}
         self.mod_loader: ast.ModuleLoader = module_loader or ast.ModuleLoader(
-            module_path,
-            modules={},
-            verbose=verbose,
-            silent=silent,
-            wrappers=build_wrappers()
+            module_path, modules={}, verbose=verbose, silent=silent, wrappers=build_wrappers()
         )
         # Load the module
         self.mod = ast.Module()
@@ -60,20 +44,16 @@ class PlusPy:
         # Now that it has a name, we add it to the ModuleLoader
         self.mod_loader[self.mod.name] = self.mod
 
-        self.constants = {
-            self.mod.constants[k]: ast.ValueExpression(v) for (k, v) in constants.items()
-        }
+        self.constants = {self.mod.constants[k]: ast.ValueExpression(v) for (k, v) in constants.items()}
 
         # Substitute containers for variables
-        self.containers = {
-            v: ast.ContainerExpression(var=v) for v in self.mod.variables.values()
-        }
+        self.containers = {v: ast.ContainerExpression(var=v) for v in self.mod.variables.values()}
 
     def init(self, init_op):
         op = self.mod.operators.get(init_op)
         if op is None:
             logger.error(f"Init Operator '{init_op}' not found")
-            exit(1)
+            raise PlusPyError("critical failure")
 
         assert isinstance(op, ast.OperatorExpression), "Init Operator must be an OperatorExpression"
         assert op.args == []
@@ -88,7 +68,7 @@ class PlusPy:
         r = expr3.eval(self.containers, {})
         if not r:
             logger.error(f"Initialization failed -- fatal error file={sys.stderr}")
-            exit(1)
+            raise PlusPyError("critical failure")
 
         ok = True
         for k, v in self.containers.items():
@@ -121,14 +101,11 @@ class PlusPy:
             for v, c in self.containers.items():
                 if c.next is None:
                     logger.error(
-                        (
-                            f"Variable {v.id} did not receive a value -- "
-                            f"fatal error file={sys.stderr}"
-                        ),
+                        (f"Variable {v.id} did not receive a value -- " f"fatal error file={sys.stderr}"),
                     )
                     error = True
             if error:
-                exit(1)
+                raise PlusPyError("Fatal error")
         else:
             for c in self.containers.values():
                 c.next = c.prev
@@ -139,7 +116,7 @@ class PlusPy:
         op = self.mod.operators.get(next_op)
         if op is None:
             logger.error(f"Next Operator '{next_op}' not found")
-            exit(1)
+            raise PlusPyError("critical failure")
         assert isinstance(op, ast.OperatorExpression), "Next Operator must be an OperatorExpression"
         return self.trynext(op.expr, op.args, arg)
 

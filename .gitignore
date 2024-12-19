@@ -22,3 +22,4 @@ coverage/
 pluspy/old_pluspy.py
 tests/test*.out*
 test*.out*
+tmp/

@@ -6,6 +6,7 @@ import traceback
 from typing import Optional
 
 from . import run_global_vars, wrappers
+from .errors import PlusPyError
 from .lexer import lexer, Token
 from .parser import GModule
 from .utils import (
@@ -134,9 +135,7 @@ class Module:
             name_stack[-1][id] = ve
 
     # handle an "Operator == INSTANCE name" definition
-    def compile_module_definition(
-        self, md, is_global: bool, mod_loader: ModuleLoader
-    ):
+    def compile_module_definition(self, md, is_global: bool, mod_loader: ModuleLoader):
         (t0, a0) = md[0]
         assert t0 == "GNonFixLHS"
         assert len(a0) == 2
@@ -244,9 +243,7 @@ class Module:
             assert tloc == "Maybe"
             (t1, a1) = a[1]
             assert t1 == "GModuleDefinition"
-            self.compile_module_definition(
-                a1, tloc is not None, mod_loader
-            )
+            self.compile_module_definition(a1, tloc is not None, mod_loader)
         elif t in {"GTheorem", "GAssumption", "GDivider"}:
             pass
         elif t == "GModule":
@@ -311,9 +308,7 @@ class Module:
         return True
 
     # Load and compile the given TLA+ source, which is a string
-    def load_from_string(
-        self, source_str, srcid, mod_loader: ModuleLoader
-    ):
+    def load_from_string(self, source_str, srcid, mod_loader: ModuleLoader):
         # First run source through lexical analysis
         tokens: list[Token] = lexer(source_str, srcid)
         if mod_loader.verbose:
@@ -380,7 +375,7 @@ def load_module(name: str, mod_loader: ModuleLoader):
     name_stack.append({})
     if not mod.load_from_file(name + ".tla", mod_loader):
         logger.error(f"can't load {name}: fatal error file={sys.stderr}")
-        exit(1)
+        raise PlusPyError("critical failure")
     name_stack.pop()
     mod_loader[name] = mod
     return mod
@@ -389,6 +384,7 @@ def load_module(name: str, mod_loader: ModuleLoader):
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Module instance
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
+
 
 # Describes an "INSTANCE module-name WITH k <- e ..." expression.
 # Here each k is either a constant or variable name of the module, and e
@@ -486,6 +482,7 @@ class ModInst:
 ####    Compiler: Expressions
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 
+
 def name_lookup(name):
     for d in reversed(name_stack):
         if ex := d.get(name):
@@ -499,7 +496,6 @@ def name_find(name):
     if not e:
         logger.error(f"Identifier {name} not found")
     return e
-
 
 
 # Get the prefix of an A!B!C type expression
@@ -561,7 +557,7 @@ def op_subst(instances):
     # Check that the arity of the operator is correct
     if len(oargs) != len(iargs):
         print("arity mismatch", lex, "expected:", len(oargs), "got:", len(iargs))
-        exit(1)
+        raise PlusPyError("critical failure")
 
     # Do a substitution, replacing argument names with argument values
     subs = {}
@@ -570,9 +566,7 @@ def op_subst(instances):
 
     x = expr.substitute(subs)
     if isinstance(x, BuiltinExpression):
-        return BuiltinExpression(
-            id=x.id, args=x.args, wrapper=x.wrapper, lex=lex, primed=x.primed
-        )
+        return BuiltinExpression(id=x.id, args=x.args, wrapper=x.wrapper, lex=lex, primed=x.primed)
     return x
 
 
@@ -639,7 +633,7 @@ def compile_op_expression(od):
             return ParameterExpression(id, cargs)
     elif operators.get(name) is None:
         print("unknown identifier", str(a2))
-        exit(1)
+        raise PlusPyError("critical failure")
     else:
         id = operators[name]
 
@@ -670,21 +664,13 @@ def compile_quant_bound_expression(which, qs, ex):
     name_stack.pop()
 
     if which == "exists":
-        return ExistsExpression(
-            quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed
-        )
+        return ExistsExpression(quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed)
     if which == "forall":
-        return ForallExpression(
-            quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed
-        )
+        return ForallExpression(quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed)
     if which == "lambda":
-        return LambdaExpression(
-            quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed
-        )
+        return LambdaExpression(quantifiers=quantifiers, domains=domains, expr=expr, primed=expr.primed)
     if which == "gen":
-        return GenExpression(
-            expr=expr, quantifiers=quantifiers, domains=domains, primed=expr.primed
-        )
+        return GenExpression(expr=expr, quantifiers=quantifiers, domains=domains, primed=expr.primed)
     raise ValueError("Invalid quantifier type")
 
 
@@ -703,13 +689,9 @@ def compile_quant_unbound_expression(which, func):
     name_stack.pop()
 
     if which == "temporal_exists":
-        return TemporalExistsExpression(
-            quantifiers=quantifiers, expr=expr, primed=expr.primed
-        )
+        return TemporalExistsExpression(quantifiers=quantifiers, expr=expr, primed=expr.primed)
     if which == "temporal_forall":
-        return TemporalForallExpression(
-            quantifiers=quantifiers, expr=expr, primed=expr.primed
-        )
+        return TemporalForallExpression(quantifiers=quantifiers, expr=expr, primed=expr.primed)
     raise ValueError("Invalid quantifier type")
 
 
@@ -938,7 +920,7 @@ class BuiltinExpression(Expression):
             print("Evaluating", str(self.lex), "failed")
             print(e)
             print(traceback.format_exc())
-            exit(1)
+            raise PlusPyError("critical failure")
 
 
 # The simplest of expressions is just a value
@@ -982,7 +964,7 @@ class VariableExpression(Expression):
 
     def eval(self, containers, boundedvars):
         print("Error: variable", self.id, "not realized", containers, boundedvars)
-        exit(1)
+        raise PlusPyError("critical failure")
 
 
 # Another simple one is a constant expression
@@ -1003,7 +985,7 @@ class ConstantExpression(Expression):
 
     def eval(self, containers, boundedvars):
         print("Error: constant", self.id, "does not have a value")
-        exit(1)
+        raise PlusPyError("critical failure")
 
 
 # Another simple one is a bounded variable (in \E, lambdas, etc.)
@@ -1052,9 +1034,7 @@ class ArgumentExpression(Expression):
             return subs[self]
 
     def eval(self, containers, boundedvars):
-        logger.error(
-            f"Argument {self.id} not realized {self.nargs} {containers} {boundedvars}"
-        )
+        logger.error(f"Argument {self.id} not realized {self.nargs} {containers} {boundedvars}")
         raise ValueError("Argument not realized")
 
 
@@ -1084,14 +1064,10 @@ class ParameterExpression(Expression):
                 assert isinstance(op, ArgumentExpression)
                 assert len(self.args) == op.nargs
                 # print("ZZZ", self, op, subs)
-                return ParameterExpression(
-                    argument=op, args=self.args, primed=self.primed
-                )
+                return ParameterExpression(argument=op, args=self.args, primed=self.primed)
         else:
             args = [a.substitute(subs) for a in self.args]
-            return ParameterExpression(
-                argument=self.argument, args=args, primed=self.primed
-            )
+            return ParameterExpression(argument=self.argument, args=args, primed=self.primed)
 
     def eval(self, containers, boundedvars):
         logger.error(f"Parameter {self.argument} not realized")
@@ -1133,13 +1109,7 @@ class ContainerExpression(Expression):
 
     def __str__(self):
         return (
-            "Container("
-            + self.var.id
-            + ", "
-            + str(convert(self.prev))
-            + ", "
-            + str(convert(self.next))
-            + ")"
+            "Container(" + self.var.id + ", " + str(convert(self.prev)) + ", " + str(convert(self.next)) + ")"
         )
 
     def substitute(self, subs):
@@ -1191,15 +1161,7 @@ class FairnessExpression(Expression):
         self.primed = self.rhs.primed
 
     def __str__(self):
-        return (
-            "FAIRNESS("
-            + self.type
-            + ", "
-            + self.lhs.__str__()
-            + ", "
-            + self.rhs.__str__()
-            + ")"
-        )
+        return "FAIRNESS(" + self.type + ", " + self.lhs.__str__() + ", " + self.rhs.__str__() + ")"
 
     def substitute(self, subs):
         return self
@@ -1218,9 +1180,7 @@ class LambdaExpression(Expression):
     def substitute(self, subs):
         domains = [expr.substitute(subs) for expr in self.domains]
         expr = self.expr.substitute(subs)
-        return LambdaExpression(
-            quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed
-        )
+        return LambdaExpression(quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed)
 
     def enumerate(self, containers, domains, lst, result, boundedvars):
         if domains == []:
@@ -1232,20 +1192,16 @@ class LambdaExpression(Expression):
             (var, domain) = domains[0]
             if domain is False:
                 print("Error: possibly trying to evaluate Nat")
-                exit(1)
+                raise PlusPyError("critical failure")
             domain = sorted(domain, key=lambda x: key(x))
             for val in domain:
                 boundedvars[var] = ValueExpression(val)
-                self.enumerate(
-                    containers, domains[1:], lst + [val], result, boundedvars
-                )
+                self.enumerate(containers, domains[1:], lst + [val], result, boundedvars)
 
     def eval(self, containers, boundedvars):
         domains = []
         for i in range(len(self.quantifiers)):
-            domains += [
-                (self.quantifiers[i], self.domains[i].eval(containers, boundedvars))
-            ]
+            domains += [(self.quantifiers[i], self.domains[i].eval(containers, boundedvars))]
         result = {}
         self.enumerate(containers, domains, [], result, boundedvars.copy())
         return simplify(FrozenDict(result))
@@ -1272,9 +1228,7 @@ class ExistsExpression(Expression):
     def substitute(self, subs):
         domains = [expr.substitute(subs) for expr in self.domains]
         expr = self.expr.substitute(subs)
-        return ExistsExpression(
-            quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed
-        )
+        return ExistsExpression(quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed)
 
     def enumerate(self, containers, domains, boundedvars):
         if domains == []:
@@ -1307,9 +1261,7 @@ class ExistsExpression(Expression):
     def eval(self, containers, boundedvars):
         domains = []
         for i in range(len(self.quantifiers)):
-            domains += [
-                (self.quantifiers[i], self.domains[i].eval(containers, boundedvars))
-            ]
+            domains += [(self.quantifiers[i], self.domains[i].eval(containers, boundedvars))]
         return self.enumerate(containers, domains, boundedvars.copy())
 
 
@@ -1326,9 +1278,7 @@ class ForallExpression(Expression):
     def substitute(self, subs):
         domains = [expr.substitute(subs) for expr in self.domains]
         expr = self.expr.substitute(subs)
-        return ForallExpression(
-            quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed
-        )
+        return ForallExpression(quantifiers=self.quantifiers, domains=domains, expr=expr, primed=self.primed)
 
     def enumerate(self, containers, domains, boundedvars):
         if domains == []:
@@ -1345,9 +1295,7 @@ class ForallExpression(Expression):
     def eval(self, containers, boundedvars):
         domains = []
         for i in range(len(self.quantifiers)):
-            domains += [
-                (self.quantifiers[i], self.domains[i].eval(containers, boundedvars))
-            ]
+            domains += [(self.quantifiers[i], self.domains[i].eval(containers, boundedvars))]
         return self.enumerate(containers, domains, boundedvars.copy())
 
 
@@ -1364,9 +1312,7 @@ class GenExpression(Expression):
     def substitute(self, subs):
         domains = [expr.substitute(subs) for expr in self.domains]
         expr = self.expr.substitute(subs)
-        return GenExpression(
-            expr=expr, quantifiers=self.quantifiers, domains=domains, primed=self.primed
-        )
+        return GenExpression(expr=expr, quantifiers=self.quantifiers, domains=domains, primed=self.primed)
 
     def enumerate(self, containers, domains, boundedvars, result):
         if domains == []:
@@ -1381,9 +1327,7 @@ class GenExpression(Expression):
     def eval(self, containers, boundedvars):
         domains = []
         for i in range(len(self.quantifiers)):
-            domains += [
-                (self.quantifiers[i], self.domains[i].eval(containers, boundedvars))
-            ]
+            domains += [(self.quantifiers[i], self.domains[i].eval(containers, boundedvars))]
         result = []
         self.enumerate(containers, domains, boundedvars.copy(), result)
         return frozenset(result)
@@ -1734,9 +1678,7 @@ class OutfixExpression(Expression):
             initializing = True
             return OutfixExpression(op=self.op, expr=expr, primed=self.primed)
 
-        return OutfixExpression(
-            op=self.op, expr=self.expr.substitute(subs), primed=self.primed
-        )
+        return OutfixExpression(op=self.op, expr=self.expr.substitute(subs), primed=self.primed)
 
     def always(self, containers, boundedvars):
         assert isinstance(self.expr, SquareExpression)
@@ -1753,7 +1695,7 @@ class OutfixExpression(Expression):
         i = 0
         while True:
             if run_global_vars.maxcount is not None and i >= run_global_vars.maxcount:
-                exit(0)
+                return None
             for c in containers.values():
                 c.prev = c.next
                 c.next = None
@@ -1825,15 +1767,7 @@ class ChooseExpression(Expression):
         return self
 
     def __str__(self):
-        return (
-            "Choose("
-            + str(self.id)
-            + ", "
-            + self.domain.__str__()
-            + ", "
-            + self.expr.__str__()
-            + ")"
-        )
+        return "Choose(" + str(self.id) + ", " + self.domain.__str__() + ", " + self.expr.__str__() + ")"
 
     def substitute(self, subs):
         return ChooseExpression(
@@ -1869,14 +1803,10 @@ class ChooseExpression(Expression):
                         return Nonce(x.__hash__())
                     case _:
                         raise ValueError("ChooseExpression: unknown operator")
-            elif isinstance(self.expr, ValueExpression) and isinstance(
-                self.expr.value, bool
-            ):
+            elif isinstance(self.expr, ValueExpression) and isinstance(self.expr.value, bool):
                 return Nonce(self.expr.value.__hash__())
         else:
-            domain = sorted(
-                self.domain.eval(containers, boundedvars), key=lambda x: key(x)
-            )
+            domain = sorted(self.domain.eval(containers, boundedvars), key=lambda x: key(x))
             for x in domain:
                 new_bv[self.id] = ValueExpression(x)
                 r = self.expr.eval(containers, new_bv)
@@ -1920,13 +1850,7 @@ class IfExpression(Expression):
 
     def __str__(self):
         return (
-            "If("
-            + self.cond.__str__()
-            + ", "
-            + self.ifexpr.__str__()
-            + ", "
-            + self.elseexpr.__str__()
-            + ")"
+            "If(" + self.cond.__str__() + ", " + self.ifexpr.__str__() + ", " + self.elseexpr.__str__() + ")"
         )
 
     def substitute(self, subs):
@@ -1986,10 +1910,7 @@ class CaseExpression(Expression):
         return "Case(" + result + ")"
 
     def substitute(self, subs):
-        cases = [
-            (cond.substitute(subs), expr.substitute(subs))
-            for (cond, expr) in self.cases
-        ]
+        cases = [(cond.substitute(subs), expr.substitute(subs)) for (cond, expr) in self.cases]
         other = None if self.other is None else self.other.substitute(subs)
         return CaseExpression(cases=cases, other=other, primed=self.primed)
 
@@ -2123,15 +2044,7 @@ class InfixExpression(Expression):
         return self
 
     def __str__(self):
-        return (
-            'Infix("'
-            + str(self.op)
-            + '", '
-            + self.lhs.__str__()
-            + ", "
-            + self.rhs.__str__()
-            + ")"
-        )
+        return 'Infix("' + str(self.op) + '", ' + self.lhs.__str__() + ", " + self.rhs.__str__() + ")"
 
     def substitute(self, subs):
         return InfixExpression(
@@ -2224,7 +2137,7 @@ class InfixExpression(Expression):
             print("Evaluating infix", str(self.op), "failed")
             print(e)
             print(traceback.format_exc())
-            exit(1)
+            raise PlusPyError("critical failure")
 
         logger.error(f"Infix operator {self.op} not defined")
         raise ValueError("Infix operator not defined")
@@ -2370,9 +2283,7 @@ class TupleExpression(Expression):
         return "Tuple(" + result + ")"
 
     def substitute(self, subs):
-        return TupleExpression(
-            exprs=[e.substitute(subs) for e in self.exprs], primed=self.primed
-        )
+        return TupleExpression(exprs=[e.substitute(subs) for e in self.exprs], primed=self.primed)
 
     def eval(self, containers, boundedvars):
         return simplify(tuple([e.eval(containers, boundedvars) for e in self.exprs]))
@@ -2415,9 +2326,7 @@ class SetExpression(Expression):
         return "Set(" + result + ")"
 
     def substitute(self, subs):
-        return SetExpression(
-            elements=[e.substitute(subs) for e in self.elements], primed=self.primed
-        )
+        return SetExpression(elements=[e.substitute(subs) for e in self.elements], primed=self.primed)
 
     def eval(self, containers, boundedvars):
         result = set()
@@ -2449,15 +2358,7 @@ class FilterExpression(Expression):
         return self
 
     def __str__(self):
-        return (
-            "Filter("
-            + str(self.vars)
-            + ", "
-            + self.elements.__str__()
-            + ", "
-            + self.expr.__str__()
-            + ")"
-        )
+        return "Filter(" + str(self.vars) + ", " + self.elements.__str__() + ", " + self.expr.__str__() + ")"
 
     def substitute(self, subs):
         return FilterExpression(
@@ -2518,7 +2419,6 @@ class StringExpression(Expression):
     def apply(self, containers, boundedvars, fargs):
         assert len(fargs) == 1
         return self.string[fargs[0] - 1]
-
 
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####

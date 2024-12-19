@@ -1,4 +1,3 @@
-from collections import namedtuple
 from enum import Enum, StrEnum, unique
 from functools import lru_cache
 from typing import TypeAlias
@@ -58,6 +57,7 @@ def parse_error(a, r: "Token"):
 
 class TokenPrecedenceMixin:
     """For an enum class with TokenPrecedence values"""
+
     @classmethod
     @lru_cache
     def get(cls, key: str) -> Precedence | None:
@@ -150,7 +150,7 @@ class InfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
     MinusPlusArrow = ("-+->", (2, 2))
     MutualImplies = ("<=>", (2, 2))
     NotEqual = ("/=", (5, 5))
-    Or = ("\\/", (3, 3))   # This often starts an expression as well
+    Or = ("\\/", (3, 3))  # This often starts an expression as well
     ParensDot = ("(.)", (11, 11))
     ParensMinus = ("(-)", (11, 11))
     ParensPlus = ("(+)", (10, 10))
@@ -226,9 +226,7 @@ class PostfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
 
 # Only tokens matching the predicate are added to lexer search
 def token_predicate(op):
-    return not isalnum(op[0]) and not (
-        len(op) > 1 and op[0] == "\\" and isletter(op[1])
-    )
+    return not isalnum(op[0]) and not (len(op) > 1 and op[0] == "\\" and isletter(op[1]))
 
 
 def build_token_list() -> list[str]:
@@ -243,6 +241,7 @@ def build_token_list() -> list[str]:
 
 class Token:
     """Data structure for a token: we expect to create a lot of these"""
+
     __slots__ = ("lexeme", "where", "column", "first")
 
     def __init__(self, lexeme: str, where: tuple[str, int], column: int, first):
@@ -274,6 +273,7 @@ class Token:
 
 
 KNOWN_TOKENS = list(filter(token_predicate, build_token_list()))
+
 
 # Turn input into a sequence of tokens.  Each token is a tuple
 #   (lexeme, (file, line), column, first), where first is true if

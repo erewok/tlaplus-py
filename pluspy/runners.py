@@ -7,6 +7,7 @@ from .wrappers import NetSender
 
 logger = logging.getLogger(__name__)
 
+
 def flush():
     for x in run_global_vars.IO_outputs:
         d = x.d
@@ -31,6 +32,7 @@ def flush():
             wakeup = True
     if wakeup:
         run_global_vars.cond.notifyAll()
+
 
 def drain():
     run_global_vars.IO_outputs = []
@@ -65,8 +67,8 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
     while True:
         with run_global_vars.lock:
             tries = 0
-            flush()     # do all the outputs
-            drain()     # remove all outputs
+            flush()  # do all the outputs
+            drain()  # remove all outputs
             while not pp.next(args[0], arg) and run_global_vars.checkcontinue(step):
                 tries += 1
                 if verbose:
@@ -80,11 +82,11 @@ def run(pp, next, silent: bool = False, verbose: bool = False):
 
             if pp.unchanged():
                 if not silent:
-                    print("No state change after successful step", flush=True)
+                    logger.info("No state change after successful step")
                 break
             tries = 0
             if not silent:
-                print("Next state:", step, val_to_string(pp.getall()), flush=True)
+                logger.info(f"Next state: {step} {val_to_string(pp.getall())}")
             step += 1
 
             # To implement JWait/JSignalReturn

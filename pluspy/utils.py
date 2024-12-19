@@ -1,6 +1,7 @@
 """
 This module contains utility functions and classes used by the compiler.
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,24 +10,29 @@ logger = logging.getLogger(__name__)
 def islower(c):
     return c in "abcdefghijklmnopqrstuvwxyz"
 
+
 def isupper(c):
     return c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 
 def isletter(c):
     return islower(c) or isupper(c)
 
+
 def isnumeral(c):
     return c in "0123456789"
+
 
 def isalnum(c):
     return isletter(c) or isnumeral(c)
 
+
 def isnamechar(c):
     return isalnum(c) or c == "_"
 
+
 def isprint(c):
-    return isinstance(c, str) and len(c) == 1 and (
-        isalnum(c) or c in " ~`!@#$%^&*()-_=+[{]}\\|;:'\",<.>/?")
+    return isinstance(c, str) and len(c) == 1 and (isalnum(c) or c in " ~`!@#$%^&*()-_=+[{]}\\|;:'\",<.>/?")
 
 
 # v is either a string, a tuple of values, or a FrozenDict.
@@ -49,21 +55,22 @@ def simplify(v):
             v = tuple(t)
 
     # See if it's a tuple that can be converted into a string:
-    if isinstance(v, tuple) and \
-            all(isinstance(c, str) and len(c) == 1 for c in v):
+    if isinstance(v, tuple) and all(isinstance(c, str) and len(c) == 1 for c in v):
         return "".join(v)
 
     return v
 
+
 # Convert a value to something a little more normal and better for printing
 def convert(v):
     if isinstance(v, tuple):
-        return tuple([ convert(x) for x in v ])
+        return tuple([convert(x) for x in v])
     if isinstance(v, frozenset):
-        return [ convert(y) for y in set(v) ]
+        return [convert(y) for y in set(v)]
     if isinstance(v, FrozenDict):
-        return { convert(x):convert(y) for (x, y) in v.d.items() }
+        return {convert(x): convert(y) for (x, y) in v.d.items()}
     return v
+
 
 def is_tla_id(s):
     if not isinstance(s, str):
@@ -71,6 +78,7 @@ def is_tla_id(s):
     if any(not isnamechar(c) for c in s):
         return False
     return any(isletter(c) for c in s)
+
 
 # Defines a sorting order on all values
 def key(v):
@@ -92,6 +100,7 @@ def key(v):
         return (6, v.id)
     logger.error(f"Unsortable value: {v}")
     raise ValueError(f"key: unknown type for sorting {v}")
+
 
 # Convert a value to a string in TLA+ format
 def val_to_string(v):
@@ -127,6 +136,7 @@ def val_to_string(v):
 ####    Compiler: convenient data structures
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 
+
 class FrozenDict:
     def __init__(self, d):
         self.d = d
@@ -146,7 +156,7 @@ class FrozenDict:
             return False
         if len(self.d.keys()) != len(other.d.keys()):
             return False
-        for (k, v) in self.d.items():
+        for k, v in self.d.items():
             if v != other.d.get(k):
                 return False
         return True
@@ -170,7 +180,7 @@ class FrozenDict:
 # A Hashable "nonce" (to implement CHOOSE x: x \notin S)
 class Nonce:
     def __init__(self, id):
-        self.id = id            # TODO: ideally a cryptographic hash
+        self.id = id  # TODO: ideally a cryptographic hash
 
     def __str__(self):
         return "Nonce(" + str(self.id) + ")"

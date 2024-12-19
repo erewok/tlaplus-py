@@ -9,6 +9,7 @@ from . import run_global_vars
 from .lexer import InfixTokenKind
 from .utils import convert, FrozenDict, simplify, val_to_string
 
+
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
 ####    Python Wrappers (to replace TLA+ operator definitions)
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
@@ -330,9 +331,7 @@ class Reader(threading.Thread):
         while True:
             inp = input()
             with run_global_vars.lock:
-                run_global_vars.IO_inputs.append(
-                    FrozenDict({"intf": "fd", "mux": "stdin", "data": inp})
-                )
+                run_global_vars.IO_inputs.append(FrozenDict({"intf": "fd", "mux": "stdin", "data": inp}))
                 run_global_vars.cond.notify()
 
 
@@ -342,9 +341,7 @@ class IOPutWrapper(Wrapper):
 
     def __call__(self, ident, args):
         assert len(args) == 3
-        run_global_vars.IO_outputs.append(
-            FrozenDict({"intf": args[0], "mux": args[1], "data": args[2]})
-        )
+        run_global_vars.IO_outputs.append(FrozenDict({"intf": args[0], "mux": args[1], "data": args[2]}))
         return True
 
 

@@ -191,9 +191,7 @@ class AtLeast(Rule):
             (node_type, node_content, rem) = self.rule.parse(rest)
             if not node_type:
                 if c > 0:
-                    return parse_error(
-                        ["AtLeast" + str(self.count)] + node_content, rem
-                    )
+                    return parse_error(["AtLeast" + str(self.count)] + node_content, rem)
                 else:
                     return ("AtLeast" + str(self.count), result, rest)
             result = result + [(node_type, node_content)]
@@ -268,9 +266,7 @@ class Name(Rule):
         hasletter = False
         for char in lex:
             if not isnamechar(char):
-                return parse_error(
-                    [("Name with bad character", found_tokens[0])], found_tokens
-                )
+                return parse_error([("Name with bad character", found_tokens[0])], found_tokens)
             if isletter(char):
                 hasletter = True
         if hasletter:
@@ -289,9 +285,7 @@ class Identifier(Rule):
 
         lex = node_content.lexeme
         if lex in RESERVED_WORDS:
-            return parse_error(
-                [("Identifier: Name Reserved", node_content)], found_tokens
-            )
+            return parse_error([("Identifier: Name Reserved", node_content)], found_tokens)
         return ("Identifier", node_content, rem)
 
 
@@ -455,9 +449,7 @@ class GVariableDeclaration(Rule):
         return rule_match(
             "GVariableDeclaration",
             found_tokens,
-            Concat(
-                [OneOf([tok("VARIABLE"), tok("VARIABLES")]), CommaList(Identifier())]
-            ),
+            Concat([OneOf([tok("VARIABLE"), tok("VARIABLES")]), CommaList(Identifier())]),
             [1],
         )
 
@@ -582,9 +574,7 @@ class GOperatorDefinition(Rule):
                                 Concat(
                                     [
                                         Identifier(),
-                                        Tok(
-                                            InfixTokenKind.token_set(), "infix operator"
-                                        ),
+                                        Tok(InfixTokenKind.token_set(), "infix operator"),
                                         Identifier(),
                                     ]
                                 ),
@@ -656,9 +646,7 @@ class GQuantifierBound(Rule):
         return rule_match(
             "GQuantifierBound",
             s,
-            Concat(
-                [OneOf([CommaList(Identifier()), Tuple()]), tok("\\in"), GExpression(0)]
-            ),
+            Concat([OneOf([CommaList(Identifier()), Tuple()]), tok("\\in"), GExpression(0)]),
             [0, 2],
         )
 
@@ -742,9 +730,7 @@ class GInstancePrefix(Rule):
 
 class GGeneralIdentifier(Rule):
     def parse(self, s):
-        return rule_match(
-            "GGeneralIdentifier", s, Concat([GInstancePrefix(), Identifier()])
-        )
+        return rule_match("GGeneralIdentifier", s, Concat([GInstancePrefix(), Identifier()]))
 
 
 class GGeneralPrefixOp(Rule):
@@ -752,9 +738,7 @@ class GGeneralPrefixOp(Rule):
         return rule_match(
             "GGeneralPrefixOp",
             s,
-            Concat(
-                [GInstancePrefix(), Tok(PrefixTokenKind.token_set(), "prefix operator")]
-            ),
+            Concat([GInstancePrefix(), Tok(PrefixTokenKind.token_set(), "prefix operator")]),
         )
 
 
@@ -763,9 +747,7 @@ class GGeneralInfixOp(Rule):
         return rule_match(
             "GGeneralInfixOp",
             s,
-            Concat(
-                [GInstancePrefix(), Tok(InfixTokenKind.token_set(), "infix operator")]
-            ),
+            Concat([GInstancePrefix(), Tok(InfixTokenKind.token_set(), "infix operator")]),
         )
 
 
@@ -816,9 +798,7 @@ class GExpression(Rule):
             (node_type, node_content, rem) = GExpression(0).parse(found_tokens[1:])
             if node_type is False:
                 stack.pop()
-                return parse_error(
-                    [(f"GExpression{self.level}", first), *node_content], rem
-                )
+                return parse_error([(f"GExpression{self.level}", first), *node_content], rem)
 
             while rem != [] and rem[0].junct == token:
                 (node_type2, node_content2, rem2) = GExpression(0).parse(rem[1:])
@@ -884,8 +864,7 @@ class GExpression(Rule):
                     if not node_type2:
                         return (
                             False,
-                            ["GExpresssion" + str(self.level) + ": bad index"]
-                            + node_content2,
+                            ["GExpresssion" + str(self.level) + ": bad index"] + node_content2,
                             rem2,
                         )
                     (node_type, node_content, rem) = (
@@ -913,8 +892,7 @@ class GExpression(Rule):
                     if node_type2 is False:
                         return (
                             False,
-                            ["GExpression" + str(self.level) + ": no field name"]
-                            + node_content2,
+                            ["GExpression" + str(self.level) + ": no field name"] + node_content2,
                             rem2,
                         )
                     assert node_type2 == "Name"
@@ -939,8 +917,7 @@ class GExpression(Rule):
                     if node_type2 is False:
                         return (
                             False,
-                            ["GExpression" + str(self.level) + ": " + str(rem[0])]
-                            + node_content2,
+                            ["GExpression" + str(self.level) + ": " + str(rem[0])] + node_content2,
                             rem2,
                         )
 
@@ -1031,18 +1008,14 @@ class GBasicExpression(Rule):
                             [
                                 GGeneralIdentifier(),
                                 Maybe(
-                                    Concat(
-                                        [tok("("), CommaList(GArgument()), tok(")")]
-                                    ),
+                                    Concat([tok("("), CommaList(GArgument()), tok(")")]),
                                     [1],
                                 ),
                             ]
                         ),
                         [0, 1],
                     ),
-                    Tag(
-                        "parentheses", Concat([tok("("), GExpression(0), tok(")")]), [1]
-                    ),
+                    Tag("parentheses", Concat([tok("("), GExpression(0), tok(")")]), [1]),
                     Tag(
                         "exists",
                         Concat(
@@ -1094,9 +1067,7 @@ class GBasicExpression(Rule):
                     Tuple(),
                     Tag(
                         "set",
-                        Concat(
-                            [tok("{"), Maybe(CommaList(GExpression(0))), tok("}")]
-                        ),
+                        Concat([tok("{"), Maybe(CommaList(GExpression(0))), tok("}")]),
                         [1],
                     ),
                     Tag(
