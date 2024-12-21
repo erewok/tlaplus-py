@@ -7,7 +7,7 @@ from typing import Optional
 
 from . import run_global_vars, wrappers
 from .errors import PlusPyError
-from .lexer import lexer, Token
+from .lexer import lexer_discard_preamble, Token
 from .parser import GModule
 from .utils import (
     convert,
@@ -310,7 +310,8 @@ class Module:
     # Load and compile the given TLA+ source, which is a string
     def load_from_string(self, source_str, srcid, mod_loader: ModuleLoader):
         # First run source through lexical analysis
-        tokens: list[Token] = lexer(source_str, srcid)
+        tokens: list[Token] = lexer_discard_preamble(source_str, srcid)
+
         if mod_loader.verbose:
             logger.info("---------------")
             logger.info("Output from Lexer")
@@ -920,7 +921,7 @@ class BuiltinExpression(Expression):
             print("Evaluating", str(self.lex), "failed")
             print(e)
             print(traceback.format_exc())
-            raise PlusPyError("critical failure")
+            raise PlusPyError("critical failure") from e
 
 
 # The simplest of expressions is just a value
@@ -1161,7 +1162,7 @@ class FairnessExpression(Expression):
         self.primed = self.rhs.primed
 
     def __str__(self):
-        return "FAIRNESS(" + self.type + ", " + self.lhs.__str__() + ", " + self.rhs.__str__() + ")"
+        return f"FAIRNESS({self.type}, lhs={str(self.lhs)}, rhs={str(self.rhs)})"
 
     def substitute(self, subs):
         return self
@@ -1307,7 +1308,7 @@ class GenExpression(Expression):
         self.primed = primed
 
     def __str__(self):
-        return "Gen(" + self.expr.__str__() + ", " + str(self.quantifiers) + ")"
+        return f"Gen({str(self.expr)}, {str(self.quantifiers)})"
 
     def substitute(self, subs):
         domains = [expr.substitute(subs) for expr in self.domains]
@@ -2137,7 +2138,7 @@ class InfixExpression(Expression):
             print("Evaluating infix", str(self.op), "failed")
             print(e)
             print(traceback.format_exc())
-            raise PlusPyError("critical failure")
+            raise PlusPyError("critical failure") from e
 
         logger.error(f"Infix operator {self.op} not defined")
         raise ValueError("Infix operator not defined")

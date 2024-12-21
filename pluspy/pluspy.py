@@ -39,7 +39,7 @@ class PlusPy:
 
         result = self.mod.load_from_file(filename, self.mod_loader)
         if not result:
-            raise PlusPyError("can't load " + filename)
+            raise PlusPyError(f"Failed to load file: {filename}")
 
         # Now that it has a name, we add it to the ModuleLoader
         self.mod_loader[self.mod.name] = self.mod
@@ -53,7 +53,7 @@ class PlusPy:
         op = self.mod.operators.get(init_op)
         if op is None:
             logger.error(f"Init Operator '{init_op}' not found")
-            raise PlusPyError("critical failure")
+            raise PlusPyError("[Init] Critical failure")
 
         assert isinstance(op, ast.OperatorExpression), "Init Operator must be an OperatorExpression"
         assert op.args == []
@@ -68,7 +68,7 @@ class PlusPy:
         r = expr3.eval(self.containers, {})
         if not r:
             logger.error(f"Initialization failed -- fatal error file={sys.stderr}")
-            raise PlusPyError("critical failure")
+            raise PlusPyError("[Init] critical failure")
 
         ok = True
         for k, v in self.containers.items():
@@ -105,7 +105,7 @@ class PlusPy:
                     )
                     error = True
             if error:
-                raise PlusPyError("Fatal error")
+                raise PlusPyError("[Next] Fatal error")
         else:
             for c in self.containers.values():
                 c.next = c.prev
@@ -116,7 +116,7 @@ class PlusPy:
         op = self.mod.operators.get(next_op)
         if op is None:
             logger.error(f"Next Operator '{next_op}' not found")
-            raise PlusPyError("critical failure")
+            raise PlusPyError("[{next_op}] critical failure")
         assert isinstance(op, ast.OperatorExpression), "Next Operator must be an OperatorExpression"
         return self.trynext(op.expr, op.args, arg)
 

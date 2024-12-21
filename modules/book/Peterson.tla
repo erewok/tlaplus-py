@@ -11,8 +11,8 @@ EXTENDS Naturals
         \* always take a step.
         a1: while (TRUE) {
              skip ;  \* the noncritical section
-        a2:  flag[self] := TRUE ; 
-        a3:  turn := 1 - self ; 
+        a2:  flag[self] := TRUE ;
+        a3:  turn := 1 - self ;
         a4: while (TRUE) {
               a4a: if (flag[1-self] = FALSE) {goto cs};
               a4b: if (turn = self) {goto cs}           } ;
@@ -84,6 +84,7 @@ proc(self) == a1(self) \/ a2(self) \/ a3(self) \/ a4(self) \/ a4a(self)
                  \/ a4b(self) \/ cs(self) \/ a5(self) \/ a6(self)
 
 Next == (\E self \in {0,1}: proc(self))
+
 
 Spec == /\ Init /\ [][Next]_vars
         /\ \A self \in {0,1} : WF_vars(proc(self))

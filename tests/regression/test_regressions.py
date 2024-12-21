@@ -19,15 +19,16 @@ REGRESSION_TEST_WITH_CUSTOM_INIT = [
 
 REGRESSION_TESTS = [
     "HourClock",
+    # Fails due to WF_vars in spec
     "Peterson",
     "Prime",
     "TestChannel",
     "TestInnerFIFO",
     "TestInnerFIFO2",
     "Qsort",
+    "Exprs",
     # Hangs pytest at finish due to seeming threading deadlock
     # "TestBinBosco",
-    "Exprs",
 ]
 
 
@@ -50,13 +51,13 @@ def log_capture():
 def test_regression_common(test_name, log_capture):
     parser = cli.cli()
     args = parser.parse_args([test_name, DEFAULT_SEED, DEFAULT_COUNT])
+    breakpoint()
     cli.run_with_args(args)
     log_contents = log_capture.getvalue()
     expected = expected_output_loader(test_name)
     assert log_contents == expected
 
 
-@pytest.mark.skip(reason="Not implemented")
 @pytest.mark.parametrize("test_name", REGRESSION_TEST_WITH_CUSTOM_INIT)
 def test_regression_custom_init(test_name, log_capture):
     logout = StringIO()

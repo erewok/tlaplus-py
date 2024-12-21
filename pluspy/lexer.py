@@ -25,18 +25,72 @@ class TokenKind(StrEnum):
     Exists = "\\E"
     ForAllUnique = "\\AA"
     ExistsUnique = "\\EE"
-    WeakFairness = "WF_"
-    StrongFairness = "SF_"
+    ParensStart = "("
+    ParensEnd = ")"
+    BraceStart = "{"
+    BraceEnd = "}"
+    BracketStart = "["
+    BracketEnd = "]"
 
     @classmethod
     @lru_cache
     def token_list(cls) -> list[str]:
-        return [kind.value for kind in cls]
+        return [kind for kind in cls]
 
     @classmethod
     @lru_cache
     def token_set(cls) -> set[str]:
-        return set(kind.value[0] for kind in cls)
+        return set(cls.token_list())
+
+    @classmethod
+    def find(cls, value: str) -> tuple["TokenKind", str] | None:
+        keys = cls.token_set()
+        for chunk in (1, 2, 3):
+            if value[:chunk] in keys:
+                return cls(value[:chunk]), value[chunk:]
+        return None
+
+
+@unique
+class FairnessTokenKind(StrEnum):
+    # These ones are special
+    WeakFairness = "WF_"
+    StrongFairness = "SF_"
+
+    @classmethod
+    def scan_fairness(cls, value: str) -> tuple["FairnessTokenKind", str] | None:
+        """
+        Scan a fairness operator (up to space or paranethesis)
+
+        Returns a tuple of the fairness kind and the rest of the string
+        If this is not a fairness token, returns None.
+        """
+        potential_fairness_prefix = value[:3]
+        kind = None
+        if potential_fairness_prefix == cls.WeakFairness.value:
+            kind = cls.WeakFairness
+        elif potential_fairness_prefix == cls.StrongFairness.value:
+            kind = cls.StrongFairness
+        if kind is not None:
+            parsed_chars = []
+            for char in value[3:]:
+                if isnamechar(char):
+                    parsed_chars.append(char)
+                else:
+                    break
+            parsed_rem = "".join(parsed_chars)
+            return kind, parsed_rem
+        return None
+
+    @classmethod
+    @lru_cache
+    def token_list(cls) -> list[str]:
+        return [kind for kind in cls]
+
+    @classmethod
+    @lru_cache
+    def token_set(cls) -> set[str]:
+        return set(cls.token_list())
 
 
 Precedence: TypeAlias = tuple[int, int]
@@ -76,7 +130,7 @@ class TokenPrecedenceMixin:
     @classmethod
     @lru_cache
     def token_set(cls) -> set[str]:
-        return set(kind.value[0] for kind in cls)
+        return set(cls.token_list())
 
     @property
     def lexeme(self) -> str:
@@ -107,6 +161,38 @@ class PrefixTokenKind(TokenPrecedenceMixin, Enum):
     Unchanged = ("UNCHANGED", (4, 15))
     Union = ("UNION", (8, 8))
 
+
+RESERVED_WORDS = [
+    "ASSUME",
+    "ELSE",
+    "LOCAL",
+    "UNION",
+    "ASSUMPTION",
+    "ENABLED",
+    "MODULE",
+    "VARIABLE",
+    "AXIOM",
+    "EXCEPT",
+    "OTHER",
+    "VARIABLES",
+    "CASE",
+    "EXTENDS",
+    "CHOOSE",
+    "IF",
+    "SUBSET",
+    "WITH",
+    "CONSTANT",
+    "IN",
+    "THEN",
+    "CONSTANTS",
+    "INSTANCE",
+    "THEOREM",
+    "DOMAIN",
+    "LET",
+    "UNCHANGED",
+    "SF_",
+    "WF_",
+]
 
 @unique
 class InfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
@@ -221,18 +307,18 @@ class PostfixTokenKind(TokenPrecedenceMixin, TokenPrecedence, Enum):
     CaretPlus = ("^+", (15, 15))
     CaretStar = ("^*", (15, 15))
     CaretHash = ("^#", (15, 15))
-    Bracket = ("[", (16, 16))
 
 
 # Only tokens matching the predicate are added to lexer search
 def token_predicate(op):
-    return not isalnum(op[0]) and not (len(op) > 1 and op[0] == "\\" and isletter(op[1]))
+    return not isalnum(op[0]) and not (
+        len(op) > 1 and op[0] == "\\" and isletter(op[1])
+    )
 
 
 def build_token_list() -> list[str]:
     """Build a list of all tokens"""
     return [
-        *TokenKind.token_list(),
         *PrefixTokenKind.token_list(),
         *InfixTokenKind.token_list(),
         *PostfixTokenKind.token_list(),
@@ -242,13 +328,21 @@ def build_token_list() -> list[str]:
 class Token:
     """Data structure for a token: we expect to create a lot of these"""
 
-    __slots__ = ("lexeme", "where", "column", "first")
+    __slots__ = ("lexeme", "where", "column", "first", "kind")
 
-    def __init__(self, lexeme: str, where: tuple[str, int], column: int, first):
+    def __init__(
+        self,
+        lexeme: str,
+        where: tuple[str, int],
+        column: int,
+        first: bool,
+        kind: TokenKind | StrEnum | None = None,
+    ):
         self.lexeme = lexeme  # chars representation of the token
         self.where = where  # filename, line number
         self.column = column  # Column number offset
         self.first = first  # True if it's the first token on the line
+        self.kind = kind
 
     def __getitem__(self, i):
         """Pretend to be a tuple"""
@@ -370,11 +464,29 @@ def lexer(chars: str, filename: str) -> list[Token]:
             column += i
             continue
 
+        if result := TokenKind.find(chars):
+            kind, chars = result
+            found_tokens.append(Token(kind.value, (filename, line), column, first, kind=kind))
+            first = False
+            column += len(kind.value)
+            continue
+
+        # See if it's a fairness operator
+        if result := FairnessTokenKind.scan_fairness(chars):
+            kind, fair_variable = result
+            lexeme = f"{kind.value}{fair_variable}"
+            found_tokens.append(Token(lexeme, (filename, line), column, first, kind=kind))
+            first = False
+            chars = chars[len(lexeme):]
+            column += len(lexeme)
+            continue
+
         # see if it's a multi-character token.  Match with the longest one
         found = ""
         for tok in KNOWN_TOKENS:
             if chars.startswith(tok) and len(tok) > len(found):
                 found = tok
+
         if found != "":
             found_tokens.append(Token(found, (filename, line), column, first))
             first = False
@@ -433,7 +545,11 @@ def lexer(chars: str, filename: str) -> list[Token]:
         first = False
         chars = chars[1:]
         column += 1
+    return found_tokens
 
+
+def lexer_discard_preamble(chars: str, filename: str) -> list[Token]:
+    found_tokens = lexer(chars, filename)
     # We discard the preamble tokens below.
     #
     # Preamble is defined as anything that comes before the module start
@@ -465,5 +581,4 @@ def lexer(chars: str, filename: str) -> list[Token]:
         else:
             # Advance the line number and discard the token
             found_tokens = found_tokens[1:]
-
     return found_tokens

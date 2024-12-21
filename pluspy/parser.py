@@ -1,10 +1,8 @@
 import logging
-import os
-import sys
 from abc import ABC, abstractmethod
 from typing import TypeAlias
 
-from .lexer import InfixTokenKind, PostfixTokenKind, PrefixTokenKind, Token
+from .lexer import InfixTokenKind, PostfixTokenKind, PrefixTokenKind, RESERVED_WORDS, Token
 from .utils import (
     isletter,
     isnamechar,
@@ -12,11 +10,6 @@ from .utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def exit(status):
-    sys.stdout.flush()
-    os._exit(status)
 
 
 # When compiling and running into an identifier, it should be clear
@@ -29,42 +22,6 @@ def exit(status):
 #   - a bound variable (\E, ...)
 #   - a module
 #
-
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-####    Compiler: various tables copied from book
-#### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
-
-RESERVED_WORDS = [
-    "ASSUME",
-    "ELSE",
-    "LOCAL",
-    "UNION",
-    "ASSUMPTION",
-    "ENABLED",
-    "MODULE",
-    "VARIABLE",
-    "AXIOM",
-    "EXCEPT",
-    "OTHER",
-    "VARIABLES",
-    "CASE",
-    "EXTENDS",
-    "CHOOSE",
-    "IF",
-    "SUBSET",
-    "WITH",
-    "CONSTANT",
-    "IN",
-    "THEN",
-    "CONSTANTS",
-    "INSTANCE",
-    "THEOREM",
-    "DOMAIN",
-    "LET",
-    "UNCHANGED",
-    "SF_",
-    "WF_",
-]
 
 
 #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ####
